@@ -1,0 +1,152 @@
+[
+  {
+    "title": "Attention Is All You Need",
+    "authors": ["Ashish Vaswani", "Noam Shazeer", "Niki Parmar", "Jakob Uszkoreit"],
+    "year": 2017,
+    "abstract": "The dominant sequence transduction models are based on complex recurrent or convolutional neural networks that include an encoder and a decoder. The best performing models also connect the encoder and decoder through an attention mechanism. We propose a new simple network architecture, the Transformer, based solely on attention mechanisms, dispensing with recurrence and convolutions entirely.",
+    "externalIds": {
+      "arXiv": "1706.03762",
+      "DOI": "10.48550/arXiv.1706.03762"
+    }
+  },
+  {
+    "title": "Chain of Thought Prompting Elicits Reasoning in Large Language Models",
+    "authors": ["Jason Wei", "Xuezhi Wang", "Dale Schuurmans", "Maarten Bosma"],
+    "year": 2022,
+    "abstract": "We explore how generating a chain of thought, a series of intermediate reasoning steps, significantly improves the ability of large language models to perform complex reasoning. We show that chain-of-thought prompting enables models to decompose multi-step problems and arrive at answers that are otherwise difficult to obtain.",
+    "externalIds": {
+      "arXiv": "2201.11903",
+      "DOI": null
+    }
+  },
+  {
+    "title": "Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks",
+    "authors": ["Patrick Lewis", "Ethan Perez", "Aleksandra Piktus", "Fabio Petroni"],
+    "year": 2020,
+    "abstract": "Large pre-trained language models have been shown to store factual knowledge in their parameters, but their ability to access and manipulate knowledge is still limited. We introduce retrieval-augmented generation models, which combine a pre-trained seq2seq model with a dense vector index of Wikipedia accessed via a neural retriever.",
+    "externalIds": {
+      "arXiv": "2005.11401",
+      "DOI": "10.5555/3495724.3496517"
+    }
+  },
+  {
+    "title": "BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding",
+    "authors": ["Jacob Devlin", "Ming-Wei Chang", "Kenton Lee", "Kristina Toutanova"],
+    "year": 2019,
+    "abstract": "We introduce BERT, which stands for Bidirectional Encoder Representations from Transformers. Unlike recent language representation models, BERT is designed to pre-train deep bidirectional representations from unlabeled text by jointly conditioning on both left and right context in all layers. BERT obtains state-of-the-art results on eleven NLP tasks.",
+    "externalIds": {
+      "arXiv": "1810.04805",
+      "DOI": "10.18653/v1/N19-1423"
+    }
+  },
+  {
+    "title": "Language Models are Few-Shot Learners",
+    "authors": ["Tom B. Brown", "Benjamin Mann", "Nick Ryder", "Melanie Subbiah"],
+    "year": 2020,
+    "abstract": "We demonstrate that scaling up language models greatly improves task-agnostic, few-shot performance, sometimes even reaching competitiveness with prior state-of-the-art fine-tuning approaches. We train GPT-3, an autoregressive language model with 175 billion parameters, and evaluate its performance on over two dozen NLP datasets.",
+    "externalIds": {
+      "arXiv": "2005.14165",
+      "DOI": null
+    }
+  },
+  {
+    "title": "Dense Passage Retrieval for Open-Domain Question Answering",
+    "authors": ["Vladimir Karpukhin", "Barlas Oguz", "Sewon Min", "Patrick Lewis"],
+    "year": 2020,
+    "abstract": "Open-domain question answering relies on efficient passage retrieval to select candidate contexts, where traditional sparse vector space models like BM25 are the de facto method. We show that dense retrieval, where a dual-encoder framework learns dense representations of questions and passages, outperforms BM25 by a large margin on multiple open-domain QA benchmarks.",
+    "externalIds": {
+      "arXiv": "2004.04906",
+      "DOI": "10.18653/v1/D20-1167"
+    }
+  },
+  {
+    "title": "LoRA: Low-Rank Adaptation of Large Language Models",
+    "authors": ["Edward J. Hu", "Yelong Shen", "Phillip Wallis", "Zeyuan Allen-Zhu"],
+    "year": 2022,
+    "abstract": "We propose Low-Rank Adaptation, or LoRA, which freezes the pre-trained model weights and injects trainable rank decomposition matrices into each layer of the Transformer architecture. LoRA reduces the number of trainable parameters for downstream tasks by 10,000x and reduces GPU memory requirements without introducing additional inference latency.",
+    "externalIds": {
+      "arXiv": "2106.09685",
+      "DOI": "10.5555/3600270.3601080"
+    }
+  },
+  {
+    "title": "Training language models to follow instructions with human feedback",
+    "authors": ["Long Ouyang", "Jeffrey Wu", "Xu Jiang", "Diogo Almeida"],
+    "year": 2022,
+    "abstract": "We fine-tune language models to act in accordance with user intent by training on a dataset of human demonstrations and preference comparisons. The resulting InstructGPT models show improved truthfulness and reductions in toxic output generation while maintaining performance on standard NLP benchmarks.",
+    "externalIds": {
+      "arXiv": "2203.02155",
+      "DOI": null
+    }
+  },
+  {
+    "title": "Direct Preference Optimization: Your Language Model is Secretly a Reward Model",
+    "authors": ["Rafael Rafailov", "Archit Sharma", "Eric Mitchell", "Christopher D. Manning"],
+    "year": 2023,
+    "abstract": "We introduce Direct Preference Optimization, a simple and stable alternative to reinforcement learning from human feedback for aligning language models. DPO directly optimizes the policy to satisfy human preferences using a simple classification loss, without fitting a separate reward model or using RL.",
+    "externalIds": {
+      "arXiv": "2305.18290",
+      "DOI": null
+    }
+  },
+  {
+    "title": "Constitutional AI: Harmlessness from AI Feedback",
+    "authors": ["Yuntao Bai", "Andy Jones", "Kamal Ndousse", "Amanda Askell"],
+    "year": 2022,
+    "abstract": "We experiment with methods for training a harmless AI assistant through self-improvement, without any human labels identifying harmful outputs. The only human oversight is provided through a list of rules or principles, hence Constitutional AI. We show that this approach can produce a model that is both helpful and harmless.",
+    "externalIds": {
+      "arXiv": "2212.08073",
+      "DOI": null
+    }
+  },
+  {
+    "title": "Self-RAG: Learning to Retrieve, Generate, and Critique through Self-Reflection",
+    "authors": ["Akari Asai", "Zeqiu Wu", "Yizhong Wang", "Avirup Sil"],
+    "year": 2023,
+    "abstract": "We introduce Self-RAG, a framework that trains an arbitrary language model to retrieve passages on demand and to generate self-reflection tokens that critique the model's own outputs. Self-RAG substantially outperforms state-of-the-art LLMs and retrieval-augmented models on open-domain QA, reasoning, and fact verification tasks.",
+    "externalIds": {
+      "arXiv": "2310.11511",
+      "DOI": null
+    }
+  },
+  {
+    "title": "Toolformer: Language Models Can Teach Themselves to Use Tools",
+    "authors": ["Timo Schick", "Jane Dwivedi-Yu", "Roberto Dessi", "Roberta Raileanu"],
+    "year": 2023,
+    "abstract": "We introduce Toolformer, a model trained to decide which external tools to call, when to call them, what arguments to pass, and how to best incorporate the results into future token prediction. Toolformer achieves substantially improved zero-shot performance across a variety of downstream tasks using only a handful of demonstrations per API.",
+    "externalIds": {
+      "arXiv": "2302.04761",
+      "DOI": null
+    }
+  },
+  {
+    "title": "Scaling Laws for Neural Language Models",
+    "authors": ["Jared Kaplan", "Sam McCandlish", "Tom Henighan", "Tom B. Brown"],
+    "year": 2020,
+    "abstract": "We study empirical scaling laws for language model performance on the cross-entropy loss. The loss scales as a power-law with model size, dataset size, and the amount of compute used for training, with trends spanning more than seven orders of magnitude. These scaling laws enable us to predict the performance of larger models before training them.",
+    "externalIds": {
+      "arXiv": "2001.08361",
+      "DOI": null
+    }
+  },
+  {
+    "title": "Llama 2: Open Foundation and Fine-Tuned Chat Models",
+    "authors": ["Hugo Touvron", "Louis Martin", "Kevin Stone", "Peter Albert"],
+    "year": 2023,
+    "abstract": "We develop and release Llama 2, a collection of pretrained and fine-tuned large language models ranging in scale from 7 billion to 70 billion parameters. Our fine-tuned LLMs, called Llama 2-Chat, are optimized for dialogue use cases and outperform open-source chat models on most benchmarks we tested.",
+    "externalIds": {
+      "arXiv": "2307.09288",
+      "DOI": null
+    }
+  },
+  {
+    "title": "Finetuned Language Models Are Zero-Shot Learners",
+    "authors": ["Jason Wei", "Maarten Bosma", "Vincent Zhao", "Kelvin Guu"],
+    "year": 2022,
+    "abstract": "We explore a simple method for improving the zero-shot learning abilities of language models. We show that instruction tuning, fine-tuning language models on a collection of datasets described via instructions, substantially improves zero-shot performance on unseen tasks. We call our model FLAN and find it outperforms GPT-3 on many benchmarks.",
+    "externalIds": {
+      "arXiv": "2109.01652",
+      "DOI": null
+    }
+  }
+]

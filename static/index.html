@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Paper Retrieval</title>
+  <style>
+    * { box-sizing: border-box; }
+
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      line-height: 1.5;
+      color: #1a1a1a;
+      background: #f5f5f5;
+      margin: 0;
+      padding: 2rem 1rem;
+    }
+
+    .container {
+      max-width: 720px;
+      margin: 0 auto;
+    }
+
+    h1 {
+      font-size: 1.5rem;
+      font-weight: 600;
+      margin: 0 0 0.25rem;
+    }
+
+    .subtitle {
+      color: #555;
+      margin: 0 0 1.5rem;
+      font-size: 0.95rem;
+    }
+
+    form {
+      display: flex;
+      gap: 0.5rem;
+      margin-bottom: 1rem;
+    }
+
+    input[type="text"] {
+      flex: 1;
+      padding: 0.6rem 0.75rem;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      font-size: 1rem;
+    }
+
+    button {
+      padding: 0.6rem 1.25rem;
+      background: #1a1a1a;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      font-size: 1rem;
+      cursor: pointer;
+    }
+
+    button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    .status {
+      min-height: 1.25rem;
+      color: #555;
+      font-size: 0.9rem;
+      margin-bottom: 1rem;
+    }
+
+    .status.error { color: #b00020; }
+
+    .error-box {
+      display: none;
+      background: #fdecea;
+      border: 1px solid #f5c6c6;
+      border-radius: 8px;
+      padding: 0.75rem 1rem;
+      margin-bottom: 1rem;
+      color: #8a1f1f;
+      font-size: 0.9rem;
+    }
+
+    .error-box.visible { display: block; }
+
+    .error-box strong {
+      display: block;
+      margin-bottom: 0.25rem;
+    }
+
+    .results {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+
+    .card {
+      background: #fff;
+      border: 1px solid #e0e0e0;
+      border-radius: 8px;
+      padding: 1rem 1.25rem;
+    }
+
+    .card h2 {
+      font-size: 1.05rem;
+      font-weight: 600;
+      margin: 0 0 0.5rem;
+    }
+
+    .meta {
+      font-size: 0.9rem;
+      color: #444;
+      margin-bottom: 0.5rem;
+    }
+
+    .meta span + span::before {
+      content: " · ";
+    }
+
+    .score {
+      display: inline-block;
+      background: #eef2ff;
+      color: #3730a3;
+      font-size: 0.8rem;
+      font-weight: 600;
+      padding: 0.15rem 0.5rem;
+      border-radius: 4px;
+    }
+
+    details {
+      margin-top: 0.5rem;
+      font-size: 0.9rem;
+    }
+
+    summary {
+      cursor: pointer;
+      color: #555;
+      user-select: none;
+    }
+
+    .abstract {
+      margin-top: 0.5rem;
+      color: #333;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Paper Retrieval</h1>
+    <p class="subtitle">Search and rank papers by semantic relevance.</p>
+
+    <form id="search-form">
+      <input
+        type="text"
+        id="query"
+        name="query"
+        placeholder="e.g. retrieval augmented generation"
+        required
+      >
+      <button type="submit" id="submit-btn">Search</button>
+    </form>
+
+    <p class="status" id="status"></p>
+    <div class="error-box" id="error-box" role="alert"></div>
+    <div class="results" id="results"></div>
+  </div>
+
+  <script>
+    const form = document.getElementById("search-form");
+    const queryInput = document.getElementById("query");
+    const submitBtn = document.getElementById("submit-btn");
+    const statusEl = document.getElementById("status");
+    const errorBoxEl = document.getElementById("error-box");
+    const resultsEl = document.getElementById("results");
+
+    function setStatus(message, isError = false) {
+      statusEl.textContent = message;
+      statusEl.className = isError ? "status error" : "status";
+    }
+
+    function showError(message) {
+      errorBoxEl.innerHTML = `
+        <strong>Search failed</strong>
+        <span>${escapeHtml(message)}</span>
+      `;
+      errorBoxEl.classList.add("visible");
+      setStatus("", false);
+    }
+
+    function clearError() {
+      errorBoxEl.classList.remove("visible");
+      errorBoxEl.innerHTML = "";
+    }
+
+    function formatAuthors(authors) {
+      if (!authors || authors.length === 0) return "Unknown";
+      return authors.join(", ");
+    }
+
+    function renderPaper(paper, index) {
+      const card = document.createElement("article");
+      card.className = "card";
+
+      const title = paper.title || "Untitled";
+      const year = paper.year ?? "n/a";
+      const score = (paper.relevance_score ?? 0).toFixed(4);
+      const abstract = paper.abstract || "No abstract available.";
+
+      card.innerHTML = `
+        <h2>${index}. ${escapeHtml(title)}</h2>
+        <div class="meta">
+          <span>${escapeHtml(formatAuthors(paper.authors))}</span>
+          <span>${escapeHtml(String(year))}</span>
+          <span class="score">${score}</span>
+        </div>
+        <details>
+          <summary>Abstract</summary>
+          <p class="abstract">${escapeHtml(abstract)}</p>
+        </details>
+      `;
+
+      return card;
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement("div");
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+
+      const query = queryInput.value.trim();
+      if (!query) return;
+
+      submitBtn.disabled = true;
+      resultsEl.innerHTML = "";
+      clearError();
+      setStatus("Searching and ranking papers…");
+
+      try {
+        const response = await fetch("/search", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ query }),
+        });
+
+        let data = {};
+        try {
+          data = await response.json();
+        } catch {
+          throw new Error("Server returned an invalid response.");
+        }
+
+        if (!response.ok) {
+          showError(data.error || "Search failed. Please try again later.");
+          return;
+        }
+
+        const papers = data.papers || [];
+
+        if (papers.length === 0) {
+          setStatus("No papers found.");
+          return;
+        }
+
+        let status = `Found ${papers.length} paper${papers.length === 1 ? "" : "s"}, sorted by relevance.`;
+        if (data.status === "weak_results") {
+          status += " (low confidence — best available results shown)";
+        }
+        setStatus(status);
+
+        papers.forEach((paper, index) => {
+          resultsEl.appendChild(renderPaper(paper, index + 1));
+        });
+      } catch (error) {
+        showError(error.message || "Network error. Is the server running?");
+      } finally {
+        submitBtn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>
