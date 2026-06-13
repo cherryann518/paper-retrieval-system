@@ -29,8 +29,44 @@
 
     .subtitle {
       color: #555;
-      margin: 0 0 1.5rem;
+      margin: 0 0 1.25rem;
       font-size: 0.95rem;
+    }
+
+    .tabs {
+      display: flex;
+      gap: 0.25rem;
+      margin-bottom: 1.25rem;
+      border-bottom: 1px solid #ddd;
+    }
+
+    .tab {
+      padding: 0.5rem 1rem;
+      background: none;
+      border: none;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -1px;
+      color: #555;
+      font-size: 0.95rem;
+      font-weight: 500;
+      cursor: pointer;
+    }
+
+    .tab:hover {
+      color: #1a1a1a;
+    }
+
+    .tab.active {
+      color: #1a1a1a;
+      border-bottom-color: #1a1a1a;
+    }
+
+    .panel {
+      display: none;
+    }
+
+    .panel.active {
+      display: block;
     }
 
     form {
@@ -47,7 +83,8 @@
       font-size: 1rem;
     }
 
-    button {
+    button[type="submit"],
+    .btn-primary {
       padding: 0.6rem 1.25rem;
       background: #1a1a1a;
       color: #fff;
@@ -57,7 +94,7 @@
       cursor: pointer;
     }
 
-    button:disabled {
+    button[type="submit"]:disabled {
       opacity: 0.6;
       cursor: not-allowed;
     }
@@ -143,6 +180,91 @@
       margin-top: 0.5rem;
       color: #333;
     }
+
+    .history-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+
+    .history-item {
+      width: 100%;
+      text-align: left;
+      background: #fff;
+      border: 1px solid #e0e0e0;
+      border-radius: 8px;
+      padding: 0.85rem 1rem;
+      cursor: pointer;
+      font: inherit;
+      color: inherit;
+    }
+
+    .history-item:hover {
+      border-color: #bbb;
+      background: #fafafa;
+    }
+
+    .history-query {
+      font-weight: 600;
+      margin-bottom: 0.25rem;
+      word-break: break-word;
+    }
+
+    .history-meta {
+      font-size: 0.85rem;
+      color: #666;
+    }
+
+    .history-meta span + span::before {
+      content: " · ";
+    }
+
+    .history-empty {
+      color: #666;
+      font-size: 0.95rem;
+      padding: 1rem 0;
+    }
+
+    .refinement-info {
+      display: none;
+      background: #fff;
+      border: 1px solid #e0e0e0;
+      border-radius: 8px;
+      padding: 0.85rem 1rem;
+      margin-bottom: 1rem;
+      font-size: 0.9rem;
+    }
+
+    .refinement-info.visible {
+      display: block;
+    }
+
+    .refinement-info strong {
+      display: block;
+      margin-bottom: 0.5rem;
+      font-size: 0.85rem;
+      color: #444;
+    }
+
+    .refinement-info ol {
+      margin: 0;
+      padding-left: 1.25rem;
+    }
+
+    .refinement-info li {
+      margin-bottom: 0.35rem;
+      word-break: break-word;
+    }
+
+    .refinement-info li:last-child {
+      margin-bottom: 0;
+    }
+
+    .refinement-label {
+      color: #666;
+      font-size: 0.8rem;
+      margin-right: 0.35rem;
+    }
   </style>
 </head>
 <body>
@@ -150,20 +272,37 @@
     <h1>Paper Retrieval</h1>
     <p class="subtitle">Search and rank papers by semantic relevance.</p>
 
-    <form id="search-form">
-      <input
-        type="text"
-        id="query"
-        name="query"
-        placeholder="e.g. retrieval augmented generation"
-        required
-      >
-      <button type="submit" id="submit-btn">Search</button>
-    </form>
+    <div class="tabs" role="tablist">
+      <button type="button" class="tab active" id="tab-search" role="tab" aria-selected="true">
+        Search
+      </button>
+      <button type="button" class="tab" id="tab-history" role="tab" aria-selected="false">
+        History
+      </button>
+    </div>
 
-    <p class="status" id="status"></p>
-    <div class="error-box" id="error-box" role="alert"></div>
-    <div class="results" id="results"></div>
+    <div class="panel active" id="panel-search" role="tabpanel">
+      <form id="search-form">
+        <input
+          type="text"
+          id="query"
+          name="query"
+          placeholder="e.g. retrieval augmented generation"
+          required
+        >
+        <button type="submit" id="submit-btn">Search</button>
+      </form>
+
+      <p class="status" id="status"></p>
+      <div class="error-box" id="error-box" role="alert"></div>
+      <div class="refinement-info" id="refinement-info" aria-live="polite"></div>
+      <div class="results" id="results"></div>
+    </div>
+
+    <div class="panel" id="panel-history" role="tabpanel">
+      <p class="status" id="history-status"></p>
+      <div class="history-list" id="history-list"></div>
+    </div>
   </div>
 
   <script>
@@ -172,7 +311,14 @@
     const submitBtn = document.getElementById("submit-btn");
     const statusEl = document.getElementById("status");
     const errorBoxEl = document.getElementById("error-box");
+    const refinementInfoEl = document.getElementById("refinement-info");
     const resultsEl = document.getElementById("results");
+    const tabSearch = document.getElementById("tab-search");
+    const tabHistory = document.getElementById("tab-history");
+    const panelSearch = document.getElementById("panel-search");
+    const panelHistory = document.getElementById("panel-history");
+    const historyStatusEl = document.getElementById("history-status");
+    const historyListEl = document.getElementById("history-list");
 
     function setStatus(message, isError = false) {
       statusEl.textContent = message;
@@ -191,6 +337,7 @@
     function clearError() {
       errorBoxEl.classList.remove("visible");
       errorBoxEl.innerHTML = "";
+      clearRefinementInfo();
     }
 
     function formatAuthors(authors) {
@@ -223,10 +370,162 @@
       return card;
     }
 
+    function clearRefinementInfo() {
+      refinementInfoEl.classList.remove("visible");
+      refinementInfoEl.innerHTML = "";
+    }
+
+    function renderRefinementInfo(data) {
+      clearRefinementInfo();
+
+      const queries = data.search_queries_used || [];
+      const refined = queries.slice(1);
+      if (refined.length === 0) {
+        return;
+      }
+
+      const items = refined
+        .map((query, index) => {
+          const label = refined.length === 1
+            ? "Refined query"
+            : `Refined query ${index + 1}`;
+          return `<li><span class="refinement-label">${escapeHtml(label)}</span>${escapeHtml(query)}</li>`;
+        })
+        .join("");
+
+      refinementInfoEl.innerHTML = `
+        <strong>Agent rephrased your search (${data.refinement_rounds || refined.length} round${(data.refinement_rounds || refined.length) === 1 ? "" : "s"})</strong>
+        <ol>${items}</ol>
+      `;
+      refinementInfoEl.classList.add("visible");
+    }
+
+    function renderResults(data, options = {}) {
+      const papers = data.papers || [];
+      resultsEl.innerHTML = "";
+      renderRefinementInfo(data);
+
+      if (papers.length === 0) {
+        setStatus("No papers found.");
+        return;
+      }
+
+      let status = options.fromHistory
+        ? `Past search: ${papers.length} paper${papers.length === 1 ? "" : "s"}.`
+        : `Found ${papers.length} paper${papers.length === 1 ? "" : "s"}, sorted by relevance.`;
+
+      if (data.status === "weak_results") {
+        status += " (low confidence — best available results shown)";
+      }
+      if (options.fromHistory && data.created_at) {
+        status += ` · ${formatDate(data.created_at)}`;
+      }
+      setStatus(status);
+
+      papers.forEach((paper, index) => {
+        resultsEl.appendChild(renderPaper(paper, index + 1));
+      });
+    }
+
     function escapeHtml(text) {
       const div = document.createElement("div");
       div.textContent = text;
       return div.innerHTML;
+    }
+
+    function formatDate(iso) {
+      const date = new Date(iso);
+      if (Number.isNaN(date.getTime())) return iso;
+      return date.toLocaleString(undefined, {
+        dateStyle: "medium",
+        timeStyle: "short",
+      });
+    }
+
+    function switchTab(name) {
+      const isSearch = name === "search";
+      tabSearch.classList.toggle("active", isSearch);
+      tabHistory.classList.toggle("active", !isSearch);
+      tabSearch.setAttribute("aria-selected", String(isSearch));
+      tabHistory.setAttribute("aria-selected", String(!isSearch));
+      panelSearch.classList.toggle("active", isSearch);
+      panelHistory.classList.toggle("active", !isSearch);
+
+      if (!isSearch) {
+        loadHistoryList();
+      }
+    }
+
+    tabSearch.addEventListener("click", () => switchTab("search"));
+    tabHistory.addEventListener("click", () => switchTab("history"));
+
+    async function loadHistoryList() {
+      historyStatusEl.textContent = "Loading history…";
+      historyListEl.innerHTML = "";
+
+      try {
+        const response = await fetch("/history");
+        const data = await response.json();
+        const items = data.items || [];
+
+        if (items.length === 0) {
+          historyStatusEl.textContent = "";
+          historyListEl.innerHTML = '<p class="history-empty">No past searches yet. Run a live search to see history here.</p>';
+          return;
+        }
+
+        historyStatusEl.textContent = `${items.length} past search${items.length === 1 ? "" : "es"}`;
+        historyListEl.innerHTML = "";
+
+        items.forEach((item) => {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = "history-item";
+          button.innerHTML = `
+            <div class="history-query">${escapeHtml(item.query)}</div>
+            <div class="history-meta">
+              <span>${escapeHtml(formatDate(item.created_at))}</span>
+              <span>${escapeHtml(item.status)}</span>
+              <span>${item.paper_count} paper${item.paper_count === 1 ? "" : "s"}</span>
+              ${item.refinement_rounds > 0 ? `<span>${item.refinement_rounds} refinement${item.refinement_rounds === 1 ? "" : "s"}</span>` : ""}
+            </div>
+          `;
+          button.addEventListener("click", () => openHistoryItem(item.id));
+          historyListEl.appendChild(button);
+        });
+      } catch (error) {
+        historyStatusEl.textContent = "";
+        historyListEl.innerHTML = `<p class="history-empty">${escapeHtml(error.message || "Could not load history.")}</p>`;
+      }
+    }
+
+    async function openHistoryItem(id) {
+      switchTab("search");
+      resultsEl.innerHTML = "";
+      clearError();
+      setStatus("Loading past search…");
+
+      try {
+        const response = await fetch(`/history/${id}`);
+        let data = {};
+        try {
+          data = await response.json();
+        } catch {
+          throw new Error("Server returned an invalid response.");
+        }
+
+        if (!response.ok) {
+          showError(data.error || "Could not load that search.");
+          return;
+        }
+
+        if (data.query) {
+          queryInput.value = data.query;
+        }
+        renderResults(data, { fromHistory: true });
+      } catch (error) {
+        showError(error.message || "Network error. Is the server running?");
+      }
     }
 
     form.addEventListener("submit", async (event) => {
@@ -259,22 +558,7 @@
           return;
         }
 
-        const papers = data.papers || [];
-
-        if (papers.length === 0) {
-          setStatus("No papers found.");
-          return;
-        }
-
-        let status = `Found ${papers.length} paper${papers.length === 1 ? "" : "s"}, sorted by relevance.`;
-        if (data.status === "weak_results") {
-          status += " (low confidence — best available results shown)";
-        }
-        setStatus(status);
-
-        papers.forEach((paper, index) => {
-          resultsEl.appendChild(renderPaper(paper, index + 1));
-        });
+        renderResults(data);
       } catch (error) {
         showError(error.message || "Network error. Is the server running?");
       } finally {

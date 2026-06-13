@@ -7,7 +7,7 @@ Run these in order. Use **two terminal tabs**: one for Flask, one optional for c
 ### 1. Project + venv
 
 ```bash
-cd "/Users/cherryann/Documents/PLAINTEXT/Paper Retrieval System (w2-3)"
+cd "/Users/cherryann/PLAINTEXT/Paper Retrieval System (w2-3)"
 source .venv/bin/activate
 pip install -r requirements.txt   # first time only
 ```
@@ -121,7 +121,7 @@ If Ollama is down: search still returns results; you'll see `[agent] Ollama unav
 
 **Offline sample papers (debug):**
 ```bash
-cd "/Users/cherryann/Documents/PLAINTEXT/Paper Retrieval System (w2-3)"
+cd "/Users/cherryann/PLAINTEXT/Paper Retrieval System (w2-3)"
 source .venv/bin/activate
 
 python3 -c "

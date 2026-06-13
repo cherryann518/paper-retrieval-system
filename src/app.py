@@ -10,6 +10,7 @@ from pathlib import Path
 from flask import Flask, jsonify, request, send_from_directory
 
 from src.agent import run_search_agent
+from src.history import get_search, list_history, save_search
 from src.tools import SemanticScholarError, embed_and_rank, load_sample_papers
 
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
@@ -64,8 +65,29 @@ def search():
             f"(score={top.get('relevance_score', 0):.4f})",
             flush=True,
         )
-    print(f"[search] done in {time.perf_counter() - started:.1f}s", flush=True)
+    elapsed_ms = (time.perf_counter() - started) * 1000
+    print(f"[search] done in {elapsed_ms / 1000:.1f}s", flush=True)
+
+    if not offline:
+        try:
+            result["history_id"] = save_search(result, duration_ms=elapsed_ms)
+        except OSError as exc:
+            print(f"[history] save failed: {exc}", flush=True)
+
     return jsonify(result)
+
+
+@app.get("/history")
+def history_list():
+    return jsonify({"items": list_history()})
+
+
+@app.get("/history/<int:session_id>")
+def history_detail(session_id: int):
+    item = get_search(session_id)
+    if item is None:
+        return jsonify({"error": "not found"}), 404
+    return jsonify(item)
 
 
 if __name__ == "__main__":
