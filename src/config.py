@@ -54,3 +54,6 @@ MIN_SCORE_GAP = 0.08
 OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
 OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "llama3.2")
 OLLAMA_TIMEOUT = 60
+
+# Search history retention (days)
+HISTORY_RETENTION_DAYS = 60  # ~2 months

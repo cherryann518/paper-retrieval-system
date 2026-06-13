@@ -6,9 +6,9 @@ Not used in offline mode. No caching — every live search runs the agent fresh.
 
 import json
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
-from src.config import OUTPUTS_DIR
+from src.config import HISTORY_RETENTION_DAYS, OUTPUTS_DIR
 
 HISTORY_DB_PATH = OUTPUTS_DIR / "history.db"
 DEFAULT_LIST_LIMIT = 50
@@ -37,6 +37,18 @@ def _connect() -> sqlite3.Connection:
     return conn
 
 
+def _purge_old_entries(conn: sqlite3.Connection) -> int:
+    """Delete sessions older than HISTORY_RETENTION_DAYS. Returns rows deleted."""
+    cutoff = (
+        datetime.now(timezone.utc) - timedelta(days=HISTORY_RETENTION_DAYS)
+    ).isoformat()
+    cursor = conn.execute(
+        "DELETE FROM search_sessions WHERE created_at < ?",
+        (cutoff,),
+    )
+    return cursor.rowcount
+
+
 def save_search(result: dict, duration_ms: float | None = None) -> int:
     """Store one live search result. Returns the new session id."""
     papers = result.get("papers") or []
@@ -51,6 +63,10 @@ def save_search(result: dict, duration_ms: float | None = None) -> int:
     created_at = datetime.now(timezone.utc).isoformat()
 
     with _connect() as conn:
+        deleted = _purge_old_entries(conn)
+        if deleted:
+            print(f"[history] purged {deleted} entr{'y' if deleted == 1 else 'ies'} older than {HISTORY_RETENTION_DAYS} days", flush=True)
+
         cursor = conn.execute(
             """
             INSERT INTO search_sessions (
@@ -77,6 +93,10 @@ def save_search(result: dict, duration_ms: float | None = None) -> int:
 def list_history(limit: int = DEFAULT_LIST_LIMIT) -> list[dict]:
     """Return recent sessions (newest first), without full paper payloads."""
     with _connect() as conn:
+        deleted = _purge_old_entries(conn)
+        if deleted:
+            print(f"[history] purged {deleted} entr{'y' if deleted == 1 else 'ies'} older than {HISTORY_RETENTION_DAYS} days", flush=True)
+
         rows = conn.execute(
             """
             SELECT id, query, created_at, status, refinement_rounds, paper_count

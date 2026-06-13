@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Paper Retrieval Pipeline — Presentation Slide</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #e8e8e8;
+      padding: 40px 24px;
+      font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+    }
+
+    .slide {
+      width: 100%;
+      max-width: 960px;
+      margin: 0 auto;
+      background: #fff;
+      padding: 40px 48px 32px;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
+    }
+
+    header h1 {
+      font-size: 34px;
+      font-weight: 700;
+      color: #1a1a2e;
+    }
+
+    header p {
+      font-size: 19px;
+      color: #555;
+      margin-top: 4px;
+      margin-bottom: 24px;
+    }
+
+    .main {
+      display: flex;
+      gap: 28px;
+      align-items: flex-start;
+    }
+
+    .column {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .column-side {
+      width: 200px;
+      flex-shrink: 0;
+      padding-top: 120px;
+    }
+
+    .column-center {
+      flex: 1;
+      align-items: center;
+      min-width: 0;
+    }
+
+    .card {
+      border-radius: 12px;
+      padding: 14px 18px;
+      text-align: center;
+      width: 100%;
+    }
+
+    .card h3 {
+      font-size: 15px;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+
+    .card p {
+      font-size: 13px;
+      line-height: 1.4;
+      color: #444;
+      font-weight: 500;
+    }
+
+    .offline {
+      background: #fafafa;
+      border: 2px dashed #aaa;
+    }
+
+    .offline h3 { color: #666; }
+
+    .history {
+      background: #f3e5f5;
+      border: 2px solid #7b1fa2;
+    }
+
+    .history h3 { color: #6a1b9a; }
+
+    .box {
+      width: 100%;
+      max-width: 520px;
+      border-radius: 12px;
+      padding: 14px 20px;
+      font-size: 18px;
+      font-weight: 700;
+      text-align: center;
+      color: #1a1a2e;
+    }
+
+    .box small {
+      display: block;
+      font-size: 14px;
+      font-weight: 500;
+      color: #555;
+      margin-top: 3px;
+    }
+
+    .input-box {
+      background: #f0f4ff;
+      border: 2px solid #4a6cf7;
+    }
+
+    .live-box {
+      background: #f5f5f5;
+      border: 2px solid #777;
+    }
+
+    .output-box {
+      background: #e3f2fd;
+      border: 2px solid #1565c0;
+    }
+
+    .arrow {
+      font-size: 26px;
+      color: #444;
+      line-height: 1;
+      padding: 8px 0;
+    }
+
+    .agent {
+      width: 100%;
+      max-width: 520px;
+      background: #e8f5e9;
+      border: 3px solid #2e7d32;
+      border-radius: 16px;
+      padding: 20px 24px;
+    }
+
+    .agent-title {
+      font-size: 20px;
+      font-weight: 700;
+      color: #1b5e20;
+      text-align: center;
+      margin-bottom: 14px;
+    }
+
+    .step {
+      background: #fff;
+      border: 2px solid #a5d6a7;
+      border-radius: 10px;
+      padding: 11px 14px;
+      font-size: 17px;
+      font-weight: 700;
+      text-align: center;
+    }
+
+    .step small {
+      display: block;
+      font-size: 13px;
+      font-weight: 500;
+      color: #555;
+      margin-top: 2px;
+    }
+
+    .agent .arrow { color: #2e7d32; font-size: 22px; }
+
+    .decision {
+      background: #fff8e1;
+      border: 2px solid #f9a825;
+      border-radius: 10px;
+      padding: 10px 14px;
+      font-size: 16px;
+      font-weight: 700;
+      text-align: center;
+    }
+
+    .decision-row {
+      display: flex;
+      justify-content: center;
+      gap: 28px;
+      margin-top: 8px;
+      font-size: 14px;
+    }
+
+    .yes { color: #2e7d32; }
+    .no { color: #e65100; }
+
+    .refine {
+      background: #fff3e0;
+      border: 2px dashed #ef6c00;
+      border-radius: 10px;
+      padding: 10px 14px;
+      font-size: 15px;
+      font-weight: 700;
+      color: #bf360c;
+      text-align: center;
+    }
+
+    .refine small {
+      display: block;
+      font-size: 12px;
+      font-weight: 500;
+      color: #666;
+      margin-top: 2px;
+    }
+
+    .loop-note {
+      text-align: center;
+      font-size: 13px;
+      font-weight: 700;
+      color: #ef6c00;
+      margin-top: 4px;
+    }
+
+    .save-arrow {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      width: 100%;
+      max-width: 520px;
+      margin-top: 2px;
+    }
+
+    .save-arrow span {
+      font-size: 13px;
+      font-weight: 600;
+      color: #7b1fa2;
+    }
+
+    footer {
+      margin-top: 28px;
+      padding-top: 14px;
+      border-top: 1px solid #eee;
+      display: flex;
+      justify-content: space-between;
+      font-size: 13px;
+      color: #888;
+    }
+
+    .legend { display: flex; gap: 18px; }
+
+    .legend i {
+      display: inline-block;
+      width: 11px;
+      height: 11px;
+      border-radius: 2px;
+      margin-right: 5px;
+      vertical-align: middle;
+    }
+
+    @media print {
+      body { background: white; }
+      .slide { box-shadow: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="slide">
+    <header>
+      <h1>Paper Retrieval Pipeline</h1><br>
+    </header>
+
+    <div class="main">
+      <!-- Left note -->
+      <div class="column column-side">
+        <div class="card offline">
+          <h3>Debug only</h3>
+          <p>Offline mode uses sample papers — skips agent &amp; history</p>
+        </div>
+      </div>
+
+      <!-- Center flow -->
+      <div class="column column-center">
+        <div class="box input-box">
+          User enters a research topic
+          <small>Web UI or command line</small>
+        </div>
+
+        <div class="arrow">↓</div>
+
+        <div class="box live-box">
+          Live search
+          <small>Semantic Scholar + local LLM (Ollama)</small>
+        </div>
+
+        <div class="arrow">↓</div>
+
+        <div class="agent">
+          <div class="agent-title">Agent loop</div>
+
+          <div class="step">
+            1. Search papers online
+            <small>Semantic Scholar</small>
+          </div>
+          <div class="arrow">↓</div>
+
+          <div class="step">
+            2. Rank by relevance
+            <small>Always scored against the original topic</small>
+          </div>
+          <div class="arrow">↓</div>
+
+          <div class="decision">
+            3. Good enough?
+            <div class="decision-row">
+              <span class="yes">Yes → finish</span>
+              <span class="no">No → refine</span>
+            </div>
+          </div>
+          <div class="arrow">↓</div>
+
+          <div class="refine">
+            Ollama rephrases the search query
+            <small>Up to 2 retries, then return best available</small>
+          </div>
+          <div class="loop-note">↺ search again with new query</div>
+        </div>
+
+        <div class="arrow">↓</div>
+
+        <div class="box output-box">
+          Show ranked papers
+          <small>Refined query displayed if agent rephrased</small>
+        </div>
+
+        <div class="save-arrow">
+          <span>→ save to History (web live searches only)</span>
+        </div>
+      </div>
+
+      <!-- Right: history -->
+      <div class="column column-side">
+        <div class="card history">
+          <h3>History tab</h3>
+          <p>Live searches saved to SQLite</p>
+          <p style="margin-top:8px">Browse past queries and reopen results anytime</p>
+        </div>
+      </div>
+    </div>
+
+    <footer>
+      <div class="legend">
+        <span><i style="background:#2e7d32"></i>Agent loop</span>
+        <span><i style="background:#1565c0"></i>Output</span>
+        <span><i style="background:#7b1fa2"></i>History</span>
+      </div>
+      <span>flowchart v2</span>
+    </footer>
+  </div>
+</body>
+</html>
