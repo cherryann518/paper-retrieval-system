@@ -56,9 +56,14 @@ def save_search(result: dict, duration_ms: float | None = None) -> int:
         "query": result["query"],
         "papers": papers,
         "status": result.get("status", "unknown"),
+        "mode": result.get("mode", "agent"),
         "refinement_rounds": result.get("refinement_rounds", 0),
         "search_queries_used": result.get("search_queries_used") or [result["query"]],
         "acceptance_reason": result.get("acceptance_reason", ""),
+        "rounds": result.get("rounds") or [],
+        "metrics": result.get("metrics") or {},
+        "fetch_errors": result.get("fetch_errors") or [],
+        "run_id": result.get("run_id"),
     }
     created_at = datetime.now(timezone.utc).isoformat()
 

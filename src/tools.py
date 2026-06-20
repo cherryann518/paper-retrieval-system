@@ -92,7 +92,11 @@ def embed_and_rank(query: str, papers: list[dict]) -> list[dict]:
     return sorted(papers, key=lambda paper: paper["relevance_score"], reverse=True)
 
 
-def search_semantic_scholar(query: str, limit: int = 5) -> list[dict]:
+def search_semantic_scholar(
+    query: str,
+    limit: int = 5,
+    offset: int = 0,
+) -> list[dict]:
     """
     Search Semantic Scholar for papers matching *query*.
 
@@ -107,11 +111,14 @@ def search_semantic_scholar(query: str, limit: int = 5) -> list[dict]:
         raise ValueError("query must be a non-empty string")
     if limit < 1:
         raise ValueError("limit must be at least 1")
+    if offset < 0:
+        raise ValueError("offset must be non-negative")
 
     params = urllib.parse.urlencode(
         {
             "query": query.strip(),
             "limit": limit,
+            "offset": offset,
             "fields": "title,authors,year,abstract,externalIds",
         }
     )
@@ -180,6 +187,20 @@ def search_semantic_scholar(query: str, limit: int = 5) -> list[dict]:
             }
         )
     return papers
+
+
+def fetch_semantic_scholar_soft(
+    query: str,
+    limit: int = 5,
+    offset: int = 0,
+) -> tuple[list[dict], str | None]:
+    """
+    Like search_semantic_scholar but returns ([], error_message) instead of raising.
+    """
+    try:
+        return search_semantic_scholar(query, limit=limit, offset=offset), None
+    except (SemanticScholarError, ValueError) as exc:
+        return [], str(exc)
 
 
 def load_sample_papers(limit: int | None = None) -> list[dict]:

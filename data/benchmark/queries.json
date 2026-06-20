@@ -1,0 +1,107 @@
+[
+  {
+    "query": "CRISPR",
+    "category": "short_acronym",
+    "note": "Biology acronym — not expanded in code; may need Ollama or a precise search string.",
+    "targets": [
+      {
+        "title": "A programmable dual-RNA-guided DNA endonuclease in adaptive bacterial immunity",
+        "doi": "10.1126/science.1225829"
+      }
+    ]
+  },
+  {
+    "query": "coral bleaching",
+    "category": "short",
+    "note": "Two-word topic — broad fetch, often flat_scores; good refinement trigger.",
+    "targets": [
+      {
+        "title": "Global warming and recurrent mass bleaching of corals",
+        "doi": "10.1038/nature21707"
+      }
+    ]
+  },
+  {
+    "query": "why do antibiotics stop working over time",
+    "category": "vague",
+    "note": "Natural phrasing for antimicrobial resistance — not paper keywords.",
+    "targets": [
+      {
+        "title": "Antibiotic resistance threats in the United States",
+        "doi": "10.15585/mmwr.su6303a1"
+      }
+    ]
+  },
+  {
+    "query": "how plants survive long droughts",
+    "category": "vague",
+    "note": "Ecology/plant science in plain English.",
+    "targets": [
+      {
+        "title": "Plant responses to water stress",
+        "doi": "10.1093/aob/mcf027"
+      }
+    ]
+  },
+  {
+    "query": "why volcanoes form near coastlines",
+    "category": "vague",
+    "note": "Geology concept without jargon — refinement should add subduction/plate terms.",
+    "targets": [
+      {
+        "title": "Subduction zone geochemistry",
+        "doi": "10.1146/annurev.ea.17.050189.001401"
+      }
+    ]
+  },
+  {
+    "query": "what happens in the brain during sleep",
+    "category": "vague",
+    "note": "Neuroscience casual phrasing.",
+    "targets": [
+      {
+        "title": "The neuroscience of sleep: genetics, cellular physiology and subcortical networks",
+        "doi": "10.1038/nrn3119"
+      }
+    ]
+  },
+  {
+    "query": "does growing up poor affect children later in life",
+    "category": "vague",
+    "note": "Social science question — vague vs keyword search.",
+    "targets": [
+      {
+        "title": "The long-term effects of childhood poverty on adult outcomes",
+        "doi": "10.1086/652464"
+      }
+    ]
+  },
+  {
+    "query": "hallmarks of cancer cell biology review",
+    "category": "control",
+    "note": "Keyword-rich — should work in one fetch without refinement.",
+    "targets": [
+      {
+        "title": "Hallmarks of cancer: the next generation",
+        "doi": "10.1016/j.cell.2011.02.013"
+      }
+    ]
+  },
+  {
+    "query": "The Structure of Scientific Revolutions",
+    "category": "control",
+    "note": "Exact famous work title — easy one-shot lookup.",
+    "targets": [
+      {
+        "title": "The Structure of Scientific Revolutions",
+        "doi": "10.7208/chicago/9780226459142.001.0001"
+      }
+    ]
+  },
+  {
+    "query": "how cities can reduce air pollution",
+    "category": "casual",
+    "note": "Broad policy/environment topic — no target paper; compare scores only.",
+    "targets": []
+  }
+]
