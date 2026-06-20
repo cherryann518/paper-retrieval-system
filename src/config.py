@@ -41,7 +41,8 @@ SEMANTIC_SCHOLAR_API_KEY = os.environ.get("SEMANTIC_SCHOLAR_API_KEY", "")
 SEMANTIC_SCHOLAR_MIN_INTERVAL = 1.0  # 1 request/sec with API key
 
 # Agent retrieval
-MAX_PAPERS_PER_SEARCH = 8
+SEMANTIC_SCHOLAR_FETCH_LIMIT = 50  # papers per API call (SS max is 100)
+MAX_RESULTS_RETURN = 10  # top-N papers returned after embedding rank
 MAX_REFINEMENT_ROUNDS = 2
 
 # Scoring thresholds (all-MiniLM-L6-v2 cosine similarity)

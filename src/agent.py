@@ -7,8 +7,9 @@ import urllib.error
 import urllib.request
 
 from src.config import (
-    MAX_PAPERS_PER_SEARCH,
     MAX_REFINEMENT_ROUNDS,
+    MAX_RESULTS_RETURN,
+    SEMANTIC_SCHOLAR_FETCH_LIMIT,
     MIN_GOOD_PAPERS,
     MIN_SCORE_GAP,
     OLLAMA_BASE_URL,
@@ -171,7 +172,7 @@ def run_search_agent(original_query: str) -> dict:
             f"[agent] round={refinement_round} search_query={search_query!r}",
             flush=True,
         )
-        batch = search_semantic_scholar(search_query, limit=MAX_PAPERS_PER_SEARCH)
+        batch = search_semantic_scholar(search_query, limit=SEMANTIC_SCHOLAR_FETCH_LIMIT)
         search_queries_used.append(search_query)
         all_papers = dedupe_papers(all_papers + batch)
         ranked = embed_and_rank(original_query, all_papers)
@@ -182,7 +183,7 @@ def run_search_agent(original_query: str) -> dict:
         if ok:
             return {
                 "query": original_query,
-                "papers": ranked[:MAX_PAPERS_PER_SEARCH],
+                "papers": ranked[:MAX_RESULTS_RETURN],
                 "status": "ok",
                 "refinement_rounds": refinement_round,
                 "search_queries_used": search_queries_used,
@@ -209,7 +210,7 @@ def run_search_agent(original_query: str) -> dict:
 
     return {
         "query": original_query,
-        "papers": ranked[:MAX_PAPERS_PER_SEARCH],
+        "papers": ranked[:MAX_RESULTS_RETURN],
         "status": "weak_results",
         "refinement_rounds": refinement_round,
         "search_queries_used": search_queries_used,
