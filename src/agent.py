@@ -25,7 +25,10 @@ from src.config import (
     SCORE_TOP_MIN,
     SEMANTIC_SCHOLAR_FETCH_LIMIT,
 )
-from src.tools import embed_and_rank, fetch_semantic_scholar_soft
+from src.fetch import SurveyConfig, fetch_all_sources, records_to_agent_dicts
+from src.rank import RankMethod, rank_papers
+from src.schema import agent_paper_key
+from src.store import upsert_papers_batch
 
 SearchMode = Literal["agent", "single_fetch", "multi_fetch_same"]
 
@@ -39,7 +42,6 @@ Rules:
 - Do not invent paper titles or author names.
 - If the user topic is an ambiguous acronym (e.g. RAG), infer the field from retrieved titles and the original topic — do NOT switch to unrelated domains (e.g. biology/medical RAG genes when papers are about language models)."""
 
-# Single-token queries that are ambiguous on Semantic Scholar / in embeddings.
 ML_ACRONYM_EXPANSIONS: dict[str, str] = {
     "rag": "retrieval augmented generation",
     "llm": "large language models",
@@ -74,20 +76,11 @@ class OllamaError(Exception):
     """Raised when the local Ollama API is unavailable or returns an error."""
 
 
-def _paper_key(paper: dict) -> str:
-    ids = paper.get("externalIds") or {}
-    if ids.get("DOI"):
-        return f"doi:{ids['DOI'].lower()}"
-    if ids.get("arXiv"):
-        return f"arxiv:{ids['arXiv'].lower()}"
-    return f"title:{(paper.get('title') or '').strip().lower()}"
-
-
 def dedupe_papers(papers: list[dict]) -> list[dict]:
     seen: set[str] = set()
     unique: list[dict] = []
     for paper in papers:
-        key = _paper_key(paper)
+        key = agent_paper_key(paper)
         if key in seen:
             continue
         seen.add(key)
@@ -153,10 +146,6 @@ def _format_results_for_prompt(ranked: list[dict], limit: int = 5) -> str:
 
 
 def _effective_topic(query: str) -> str:
-    """
-    Expand known ML acronyms so ranking/search are not ambiguous (e.g. RAG the gene vs RAG in NLP).
-    Multi-word queries are returned unchanged.
-    """
     stripped = query.strip()
     key = stripped.lower()
     if " " not in stripped and key in ML_ACRONYM_EXPANSIONS:
@@ -257,37 +246,45 @@ def _fetch_query_pages(
     max_pages: int,
     counters: dict,
     fetch_errors: list[dict],
-) -> tuple[list[dict], int]:
-    """Fail-soft paginated fetch for one search query. Returns (papers, pages_fetched)."""
+    config: SurveyConfig,
+) -> tuple[list[dict], int, dict[str, int]]:
+    """Fail-soft paginated multi-source fetch. Returns (papers, pages_fetched, store_stats)."""
     batch: list[dict] = []
     pages_fetched = 0
+    store_stats = {"inserted": 0, "updated": 0, "source_hits": 0}
     for page in range(max_pages):
         offset = page * SEMANTIC_SCHOLAR_FETCH_LIMIT
-        papers, error = fetch_semantic_scholar_soft(
+        records, stats = fetch_all_sources(
             search_query,
-            limit=SEMANTIC_SCHOLAR_FETCH_LIMIT,
+            config,
             offset=offset,
+            limit=SEMANTIC_SCHOLAR_FETCH_LIMIT,
         )
-        counters["api_calls"] += 1
+        counters["api_calls"] += stats.api_calls
+        counters["cache_hits"] += stats.cache_hits
+        for source, count in stats.api_calls_by_source.items():
+            key = f"api_calls_{source}"
+            counters[key] = counters.get(key, 0) + count
+        fetch_errors.extend(stats.fetch_errors)
         pages_fetched += 1
-        if error:
-            fetch_errors.append(
-                {
-                    "search_query": search_query,
-                    "page": page,
-                    "offset": offset,
-                    "error": error,
-                }
-            )
-            print(
-                f"[agent] fetch failed query={search_query!r} page={page}: {error}",
-                flush=True,
-            )
-            continue
-        batch.extend(papers)
-        if len(papers) < SEMANTIC_SCHOLAR_FETCH_LIMIT:
+
+        if stats.fetch_errors:
+            for err in stats.fetch_errors:
+                print(
+                    f"[agent] fetch failed source={err.get('source')} "
+                    f"query={search_query!r} page={page}: {err.get('error')}",
+                    flush=True,
+                )
+
+        if records:
+            page_store = upsert_papers_batch(records)
+            for key in store_stats:
+                store_stats[key] += page_store.get(key, 0)
+            batch.extend(records_to_agent_dicts(records))
+
+        if len(records) < SEMANTIC_SCHOLAR_FETCH_LIMIT:
             break
-    return batch, pages_fetched
+    return batch, pages_fetched, store_stats
 
 
 def run_search_agent(
@@ -297,9 +294,11 @@ def run_search_agent(
     refine: bool = True,
     max_pages: int | None = None,
     include_ranked_pool: bool = False,
+    survey_config: SurveyConfig | None = None,
+    rank_method: RankMethod | None = None,
 ) -> dict:
     """
-    Search Semantic Scholar, rank by relevance, optionally refine via Ollama.
+    Multi-source search, rank by relevance, optionally refine via Ollama.
 
     Modes:
       agent            — full loop with optional Ollama refinement (default)
@@ -312,6 +311,8 @@ def run_search_agent(
     original_query = original_query.strip()
     rank_topic = _effective_topic(original_query)
     pages_per_query = max_pages if max_pages is not None else MAX_PAGES_PER_QUERY
+    config = survey_config or SurveyConfig.load()
+    primary_rank: RankMethod = rank_method or config.rank_method  # type: ignore[assignment]
 
     if mode == "single_fetch":
         max_rounds = 0
@@ -328,13 +329,18 @@ def run_search_agent(
     round_records: list[dict] = []
     fetch_errors: list[dict] = []
     refinement_errors: list[str] = []
-    counters = {"api_calls": 0, "ollama_calls": 0}
+    counters: dict = {
+        "api_calls": 0,
+        "cache_hits": 0,
+        "ollama_calls": 0,
+    }
     started = time.perf_counter()
 
     refinement_round = 0
     ranked: list[dict] = []
     reason = "no_papers"
     ollama_unavailable = False
+    store_stats = {"inserted": 0, "updated": 0, "source_hits": 0}
 
     while refinement_round <= max_rounds:
         print(
@@ -342,19 +348,40 @@ def run_search_agent(
             flush=True,
         )
         round_fetch_errors: list[dict] = []
-        batch, pages_fetched = _fetch_query_pages(
+        batch, pages_fetched, page_store = _fetch_query_pages(
             search_query,
             pages_per_query,
             counters,
             round_fetch_errors,
+            config,
         )
+        for key in store_stats:
+            store_stats[key] += page_store.get(key, 0)
         fetch_errors.extend(round_fetch_errors)
         search_queries_used.append(search_query)
         all_papers = dedupe_papers(all_papers + batch)
-        ranked = embed_and_rank(rank_topic, all_papers)
+        ranked = rank_papers(
+            rank_topic,
+            all_papers,
+            methods=["sbert", "tfidf", "recency"],
+            primary_method=primary_rank,
+            from_year=config.timeline_from_year,
+            to_year=config.timeline_to_year,
+        )
 
         ok, reason = results_acceptable(ranked)
-        batch_ranked = embed_and_rank(rank_topic, batch) if batch else []
+        batch_ranked = (
+            rank_papers(
+                rank_topic,
+                batch,
+                methods=["sbert", "tfidf", "recency"],
+                primary_method=primary_rank,
+                from_year=config.timeline_from_year,
+                to_year=config.timeline_to_year,
+            )
+            if batch
+            else []
+        )
         round_records.append(
             {
                 "round": refinement_round,
@@ -365,6 +392,7 @@ def run_search_agent(
                 "acceptable": ok,
                 "reason": reason,
                 "fetch_errors": round_fetch_errors,
+                "cache_hits": counters["cache_hits"],
                 **_score_summary(ranked),
                 "batch_top_score": _score_summary(batch_ranked)["top_score"],
             }
@@ -414,15 +442,28 @@ def run_search_agent(
     else:
         status = "weak_results"
 
+    score_summary = _score_summary(ranked)
     metrics = {
         "latency_ms": round(latency_ms, 1),
         "api_calls": counters["api_calls"],
+        "cache_hits": counters["cache_hits"],
+        "api_calls_semantic_scholar": counters.get("api_calls_semantic_scholar", 0),
+        "api_calls_arxiv": counters.get("api_calls_arxiv", 0),
         "ollama_calls": counters["ollama_calls"],
         "papers_fetched": len(all_papers),
         "papers_returned": min(len(ranked), MAX_RESULTS_RETURN),
         "fetch_error_count": len(fetch_errors),
-        **_score_summary(ranked),
+        "rank_method": primary_rank,
+        "store_inserted": store_stats["inserted"],
+        "store_updated": store_stats["updated"],
+        **score_summary,
     }
+
+    if ranked:
+        metrics["scores_by_method"] = {
+            name: round(sum(p.get("scores", {}).get(name, 0) for p in ranked[:10]) / min(10, len(ranked)), 4)
+            for name in ("sbert_cosine", "tfidf_cosine", "recency")
+        }
 
     result = {
         "query": original_query,
@@ -442,9 +483,14 @@ def run_search_agent(
         result["ranked_pool"] = [
             {
                 "title": paper.get("title"),
+                "authors": paper.get("authors"),
+                "abstract": paper.get("abstract"),
                 "relevance_score": paper.get("relevance_score"),
+                "scores": paper.get("scores"),
                 "year": paper.get("year"),
                 "externalIds": paper.get("externalIds"),
+                "paper_id": paper.get("paper_id"),
+                "sources": paper.get("sources"),
             }
             for paper in ranked
         ]

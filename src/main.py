@@ -10,6 +10,7 @@ import sys
 
 from src.agent import run_search_agent
 from src.artifacts import save_run_artifacts
+from src.runtime import set_cache_enabled
 from src.tools import embed_and_rank, load_sample_papers
 
 ABSTRACT_MAX_LEN = 300
@@ -94,6 +95,11 @@ def main() -> None:
         action="store_true",
         help="Disable Ollama query refinement (agent mode only)",
     )
+    parser.add_argument(
+        "--no-cache",
+        action="store_true",
+        help="Disable source API response cache (live search only)",
+    )
     args = parser.parse_args()
 
     topic = args.topic.strip()
@@ -110,6 +116,8 @@ def main() -> None:
         ranked = embed_and_rank(topic, papers)
         print(f"Found {len(ranked)} papers, sorted by relevance...\n")
     else:
+        if args.no_cache:
+            set_cache_enabled(False)
         print(f"Running search ({args.mode}) for: {topic!r}\n", flush=True)
         result = run_search_agent(
             topic,

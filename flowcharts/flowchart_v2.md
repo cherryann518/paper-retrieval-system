@@ -1,6 +1,6 @@
 # Pipeline flowchart v2
 
-Current system: search → score → optionally refine query with Ollama → show ranked papers → persist live web searches to SQLite history.
+Current system: multi-source fetch (Semantic Scholar + arXiv) with per-source cache → normalize → main papers DB → multi-metric rank → optionally refine query with Ollama → show ranked papers → persist live web searches to SQLite history.
 
 ```mermaid
 flowchart TD
@@ -25,9 +25,10 @@ flowchart TD
     subgraph AGENT["Search agent"]
         direction TB
         START["Keep original topic,<br/>start search query<br/><small>`run_search_agent()`</small>"]
-        FETCH["Fetch papers from Semantic Scholar<br/><small>`search_semantic_scholar()`</small>"]
+        FETCH["Fetch from SS + arXiv (cached)<br/><small>`fetch_all_sources()`</small>"]
+        STORE["Upsert to main papers DB<br/><small>`upsert_papers_batch()`</small>"]
         MERGE["Merge new papers, remove duplicates<br/><small>`dedupe_papers()`</small>"]
-        SCORE["Score papers against original topic<br/><small>`embed_and_rank()`</small>"]
+        SCORE["Multi-metric rank vs original topic<br/><small>`rank_papers()`</small>"]
         CHECK{{"Good enough<br/>results?"}}
         RULES["Top score, count of strong matches,<br/>score spread<br/><small>`results_acceptable()`</small>"]
         RETRY{{"Retries left?<br/><small>max 2</small>"}}
@@ -73,9 +74,7 @@ flowchart TD
     MAIN --> START
 
     START --> FETCH
-    FETCH -->|"rate limit / network"| API_FAIL
-    API_FAIL --> WEB_OUT
-    FETCH --> MERGE --> SCORE --> CHECK
+    FETCH --> STORE --> MERGE --> SCORE --> CHECK
     CHECK --> RULES
     CHECK -->|"yes"| OK
     OK --> CLI_OUT
@@ -132,13 +131,13 @@ flowchart TD
 ## In plain English
 
 1. **User** enters a topic via the terminal or web UI, or opens the **History** tab to revisit past web searches.
-2. **Live path (default):** the agent searches Semantic Scholar, pools papers across attempts, and scores them against the **original** topic.
+2. **Live path (default):** the agent fetches from Semantic Scholar and arXiv (with per-source cache), upserts to `outputs/papers.db`, pools papers across attempts, and ranks them with SBERT/TF-IDF/recency against the **original** topic.
 3. **Quality check:** if scores pass thresholds, return results. If not, Ollama suggests a refined search query (up to 2 times).
 4. **Offline path:** only for debugging — loads `data/sample_papers.json`, no API, no agent loop, **no history save**.
 5. **History (web live only):** after a completed live search (`ok` or `weak_results`), Flask saves the full result to `outputs/history.db`. The History tab lists past queries and lets you reopen them. Restarting Flask does **not** clear history.
 6. **UI:** if the agent rephrased the search, the browser shows the refined query/queries above the paper cards.
-7. **No caching:** every live search runs the agent fresh; history is for browsing past runs, not skipping retrieval.
-8. **Errors:** API failures stop with an error message; Ollama failures skip refinement and return the best papers found so far; history save failures are logged but do not block the response.
+7. **Caching:** source API responses are cached under `outputs/cache/`; use `--no-cache` to force live fetches.
+8. **Errors:** API failures are fail-soft per source/page; Ollama failures skip refinement and return the best papers found so far; history save failures are logged but do not block the response.
 
 ## Agent loop
 

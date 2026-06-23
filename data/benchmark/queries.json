@@ -103,5 +103,27 @@
     "category": "casual",
     "note": "Broad policy/environment topic — no target paper; compare scores only.",
     "targets": []
+  },
+  {
+    "query": "attention is all you need transformer",
+    "category": "arxiv_only",
+    "note": "Famous arXiv preprint — target by arXiv ID only.",
+    "targets": [
+      {
+        "title": "Attention Is All You Need",
+        "arxiv": "1706.03762"
+      }
+    ]
+  },
+  {
+    "query": "bert pre-training deep bidirectional transformers",
+    "category": "arxiv_only",
+    "note": "arXiv-preprint target — tests cross-source dedupe with S2.",
+    "targets": [
+      {
+        "title": "BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding",
+        "arxiv": "1810.04805"
+      }
+    ]
   }
 ]

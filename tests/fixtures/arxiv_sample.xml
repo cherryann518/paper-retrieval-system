@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom"
+      xmlns:opensearch="http://a9.com/-/spec/opensearch/1.1/"
+      xmlns:arxiv="http://arxiv.org/schemas/atom">
+  <title>ArXiv Query</title>
+  <opensearch:totalResults>1</opensearch:totalResults>
+  <opensearch:startIndex>0</opensearch:startIndex>
+  <opensearch:itemsPerPage>1</opensearch:itemsPerPage>
+  <entry>
+    <id>http://arxiv.org/abs/1706.03762v7</id>
+    <title>Attention Is All You Need</title>
+    <summary>We propose a new simple network architecture, the Transformer.</summary>
+    <published>2017-06-12T00:00:00Z</published>
+    <author><name>Ashish Vaswani</name></author>
+    <arxiv:primary_category term="cs.CL"/>
+    <link href="http://arxiv.org/pdf/1706.03762v7" rel="related" type="application/pdf"/>
+  </entry>
+</feed>

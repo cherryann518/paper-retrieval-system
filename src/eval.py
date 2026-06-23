@@ -4,7 +4,9 @@ Benchmark evaluation: compare retrieval modes on a fixed query set.
 Usage:
   python -m src.eval
   python -m src.eval --benchmark data/benchmark/queries.json
-  python -m src.eval --modes single_fetch agent multi_fetch_same
+  python -m src.eval --modes single_fetch agent
+  python -m src.eval --rank-method tfidf
+  python -m src.eval --no-cache
 """
 
 from __future__ import annotations
@@ -12,11 +14,15 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 
 from src.agent import run_search_agent
 from src.config import DATA_DIR, EVAL_DIR, PROJECT_ROOT
+from src.fetch import SurveyConfig
+from src.rank import rank_papers
+from src.runtime import set_cache_enabled
 
 DEFAULT_BENCHMARK = DATA_DIR / "benchmark" / "queries.json"
 
@@ -103,6 +109,26 @@ def _batch_top_delta(rounds: list[dict]) -> float | None:
     return round(last - first, 4)
 
 
+def _alt_rank_targets(
+    query: str,
+    ranked_pool: list[dict],
+    targets: list[dict],
+    rank_method: str,
+    config: SurveyConfig,
+) -> dict:
+    if not ranked_pool or not targets:
+        return {"found_in_top10": 0, "configured": len(targets)}
+    alt_ranked = rank_papers(
+        query,
+        [dict(p) for p in ranked_pool],
+        methods=["sbert", "tfidf", "recency"],
+        primary_method=rank_method,  # type: ignore[arg-type]
+        from_year=config.timeline_from_year,
+        to_year=config.timeline_to_year,
+    )
+    return check_targets(alt_ranked[:10], alt_ranked, targets)
+
+
 def load_benchmark(path: Path) -> list[dict]:
     with path.open(encoding="utf-8") as handle:
         data = json.load(handle)
@@ -111,9 +137,23 @@ def load_benchmark(path: Path) -> list[dict]:
     return data
 
 
-def run_eval_case(query: str, mode: str, targets: list[dict], category: str) -> dict:
+def run_eval_case(
+    query: str,
+    mode: str,
+    targets: list[dict],
+    category: str,
+    *,
+    rank_method: str,
+    config: SurveyConfig,
+) -> dict:
     try:
-        result = run_search_agent(query, mode=mode, include_ranked_pool=True)
+        result = run_search_agent(
+            query,
+            mode=mode,
+            include_ranked_pool=True,
+            survey_config=config,
+            rank_method=rank_method,  # type: ignore[arg-type]
+        )
     except Exception as exc:
         print(f"[eval] failed {mode!r} — {query!r}: {exc}", flush=True)
         return {
@@ -127,12 +167,15 @@ def run_eval_case(query: str, mode: str, targets: list[dict], category: str) -> 
             "refinement_rounds": 0,
             "ollama_calls": 0,
             "api_calls": 0,
+            "cache_hits": 0,
             "latency_ms": 0.0,
             "papers_returned": 0,
             "pool_size": 0,
             "batch_top_delta": None,
             "round0_acceptable": None,
+            "rank_method": rank_method,
             "targets": check_targets([], [], targets),
+            "targets_alt_rank": {},
             "search_queries_used": [],
             "rounds": [],
         }
@@ -141,6 +184,9 @@ def run_eval_case(query: str, mode: str, targets: list[dict], category: str) -> 
     rounds = result.get("rounds") or []
     papers_top10 = result.get("papers") or []
     ranked_pool = result.get("ranked_pool") or papers_top10
+
+    alt_method = "tfidf" if rank_method == "sbert" else "sbert"
+    alt_targets = _alt_rank_targets(query, ranked_pool, targets, alt_method, config)
 
     return {
         "query": query,
@@ -152,12 +198,21 @@ def run_eval_case(query: str, mode: str, targets: list[dict], category: str) -> 
         "refinement_rounds": result.get("refinement_rounds", 0),
         "ollama_calls": metrics.get("ollama_calls", 0),
         "api_calls": metrics.get("api_calls", 0),
+        "cache_hits": metrics.get("cache_hits", 0),
+        "api_calls_semantic_scholar": metrics.get("api_calls_semantic_scholar", 0),
+        "api_calls_arxiv": metrics.get("api_calls_arxiv", 0),
         "latency_ms": metrics.get("latency_ms", 0.0),
         "papers_returned": len(papers_top10),
         "pool_size": metrics.get("papers_fetched", len(ranked_pool)),
         "batch_top_delta": _batch_top_delta(rounds),
         "round0_acceptable": rounds[0]["acceptable"] if rounds else None,
+        "rank_method": rank_method,
+        "scores_by_method": metrics.get("scores_by_method"),
         "targets": check_targets(papers_top10, ranked_pool, targets),
+        "targets_alt_rank": {
+            "method": alt_method,
+            **alt_targets,
+        },
         "search_queries_used": result.get("search_queries_used") or [],
         "rounds": rounds,
     }
@@ -167,7 +222,7 @@ def print_summary(rows: list[dict]) -> None:
     header = (
         f"{'query':<32} {'cat':<7} {'mode':<16} "
         f"{'top':>5} {'t10g':>4} {'tgt10':>5} {'tgtP':>4} "
-        f"{'ref':>3} {'bΔ':>6} {'api':>3} {'oll':>3} {'ms':>7} status"
+        f"{'ref':>3} {'bΔ':>6} {'api':>3} {'cch':>3} {'oll':>3} {'ms':>7} status"
     )
     print(header)
     print("-" * len(header))
@@ -193,7 +248,8 @@ def print_summary(rows: list[dict]) -> None:
             f"{row['top_score']:>5.3f} {row['top10_good_count']:>4} "
             f"{tgt10:>5} {tgt_pool:>4} "
             f"{row['refinement_rounds']:>3} {batch_str:>6} "
-            f"{row['api_calls']:>3} {row['ollama_calls']:>3} "
+            f"{row['api_calls']:>3} {row.get('cache_hits', 0):>3} "
+            f"{row['ollama_calls']:>3} "
             f"{row['latency_ms']:>7.0f} {row['status']}"
         )
 
@@ -239,6 +295,46 @@ def print_agent_vs_single(rows: list[dict]) -> None:
         print(f"{q:<40} {winner:<12} {note}")
 
 
+def print_rank_method_recommendation(rows: list[dict], rank_method: str) -> None:
+    """Compare primary rank method vs alternate on target hits."""
+    primary_hits = 0
+    alt_hits = 0
+    configured = 0
+    by_category: dict[str, dict[str, int]] = defaultdict(lambda: {"primary": 0, "alt": 0, "n": 0})
+
+    for row in rows:
+        if row["mode"] != "single_fetch":
+            continue
+        tgt = row["targets"]
+        alt = row.get("targets_alt_rank") or {}
+        if not tgt.get("configured"):
+            continue
+        configured += tgt["configured"]
+        primary_hits += tgt["found_in_top10"]
+        alt_hits += alt.get("found_in_top10", 0)
+        cat = row.get("category", "-")
+        by_category[cat]["n"] += tgt["configured"]
+        by_category[cat]["primary"] += tgt["found_in_top10"]
+        by_category[cat]["alt"] += alt.get("found_in_top10", 0)
+
+    alt_method = "tfidf" if rank_method == "sbert" else "sbert"
+    print(f"\nRank method comparison (single_fetch, top-10 target hits):")
+    print(f"  primary ({rank_method}): {primary_hits}/{configured}")
+    print(f"  alternate ({alt_method}): {alt_hits}/{configured}")
+    if primary_hits >= alt_hits:
+        print(f"  recommendation: keep {rank_method} as primary rank method")
+    else:
+        print(f"  recommendation: consider switching primary to {alt_method}")
+
+    if by_category:
+        print("  by category:")
+        for cat, stats in sorted(by_category.items()):
+            print(
+                f"    {cat}: {rank_method}={stats['primary']}/{stats['n']} "
+                f"alt={stats['alt']}/{stats['n']}"
+            )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Benchmark paper retrieval modes.")
     parser.add_argument(
@@ -260,16 +356,37 @@ def main() -> None:
         default=None,
         help="Optional path for eval JSON (default: outputs/eval/{timestamp}.json)",
     )
+    parser.add_argument(
+        "--rank-method",
+        choices=["sbert", "tfidf", "recency"],
+        default=None,
+        help="Primary ranking method (default: from survey_config.json)",
+    )
+    parser.add_argument(
+        "--no-cache",
+        action="store_true",
+        help="Disable source API response cache",
+    )
     args = parser.parse_args()
 
     if not args.benchmark.exists():
         print(f"Benchmark not found: {args.benchmark}", file=sys.stderr)
         sys.exit(1)
 
+    if args.no_cache:
+        set_cache_enabled(False)
+
+    config = SurveyConfig.load()
+    rank_method = args.rank_method or config.rank_method
+
     cases = load_benchmark(args.benchmark)
     rows: list[dict] = []
 
-    print(f"Running {len(cases)} queries × {len(args.modes)} modes\n", flush=True)
+    print(
+        f"Running {len(cases)} queries × {len(args.modes)} modes "
+        f"(rank={rank_method}, cache={'off' if args.no_cache else 'on'})\n",
+        flush=True,
+    )
     for case in cases:
         query = (case.get("query") or "").strip()
         if not query:
@@ -278,13 +395,25 @@ def main() -> None:
         category = case.get("category") or "-"
         for mode in args.modes:
             print(f"[eval] {mode!r} — {query!r}", flush=True)
-            rows.append(run_eval_case(query, mode, targets, category))
+            rows.append(
+                run_eval_case(
+                    query,
+                    mode,
+                    targets,
+                    category,
+                    rank_method=rank_method,
+                    config=config,
+                )
+            )
 
     print()
     print_summary(rows)
 
     if "single_fetch" in args.modes and "agent" in args.modes:
         print_agent_vs_single(rows)
+
+    if "single_fetch" in args.modes:
+        print_rank_method_recommendation(rows, rank_method)
 
     EVAL_DIR.mkdir(parents=True, exist_ok=True)
     out_path = args.output or EVAL_DIR / (
@@ -293,6 +422,8 @@ def main() -> None:
     payload = {
         "benchmark": str(args.benchmark.relative_to(PROJECT_ROOT)),
         "modes": args.modes,
+        "rank_method": rank_method,
+        "cache_enabled": not args.no_cache,
         "rows": rows,
     }
     out_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")

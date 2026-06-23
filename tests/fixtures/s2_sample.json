@@ -1,0 +1,17 @@
+{
+  "total": 1,
+  "offset": 0,
+  "data": [
+    {
+      "paperId": "abc123",
+      "title": "Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks",
+      "authors": [{"name": "Patrick Lewis"}],
+      "year": 2020,
+      "abstract": "We combine parametric and non-parametric memories.",
+      "externalIds": {"DOI": "10.5555/123", "ArXiv": "2005.11401"},
+      "citationCount": 100,
+      "venue": "NeurIPS",
+      "openAccessPdf": {"url": "https://example.com/paper.pdf"}
+    }
+  ]
+}
