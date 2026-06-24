@@ -265,6 +265,9 @@ def _fetch_query_pages(
         for source, count in stats.api_calls_by_source.items():
             key = f"api_calls_{source}"
             counters[key] = counters.get(key, 0) + count
+        for source, count in stats.papers_fetched_by_source.items():
+            by_source = counters.setdefault("papers_fetched_by_source", {})
+            by_source[source] = by_source.get(source, 0) + count
         fetch_errors.extend(stats.fetch_errors)
         pages_fetched += 1
 
@@ -275,6 +278,17 @@ def _fetch_query_pages(
                     f"query={search_query!r} page={page}: {err.get('error')}",
                     flush=True,
                 )
+
+        if stats.papers_fetched_by_source:
+            fetched = " ".join(
+                f"{source}={count}"
+                for source, count in sorted(stats.papers_fetched_by_source.items())
+            )
+            print(
+                f"[agent] page={page} fetched {fetched} "
+                f"merged={len(records)}",
+                flush=True,
+            )
 
         if records:
             page_store = upsert_papers_batch(records)
@@ -451,6 +465,9 @@ def run_search_agent(
         "api_calls_arxiv": counters.get("api_calls_arxiv", 0),
         "ollama_calls": counters["ollama_calls"],
         "papers_fetched": len(all_papers),
+        "papers_fetched_by_source": dict(
+            counters.get("papers_fetched_by_source") or {}
+        ),
         "papers_returned": min(len(ranked), MAX_RESULTS_RETURN),
         "fetch_error_count": len(fetch_errors),
         "rank_method": primary_rank,

@@ -15,6 +15,37 @@ from src.tools import embed_and_rank, load_sample_papers
 
 ABSTRACT_MAX_LEN = 300
 SEPARATOR = "─" * 72
+SOURCE_LABELS = {
+    "semantic_scholar": "Semantic Scholar",
+    "arxiv": "arXiv",
+}
+
+
+def _format_sources(sources: list[str] | None) -> str:
+    if not sources:
+        return "unknown"
+    return ", ".join(SOURCE_LABELS.get(source, source) for source in sources)
+
+
+def _format_source_counts(counts: dict[str, int]) -> str:
+    if not counts:
+        return "n/a"
+    return " | ".join(
+        f"{SOURCE_LABELS.get(source, source)}={count}"
+        for source, count in sorted(counts.items())
+    )
+
+
+def _count_result_sources(papers: list[dict]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for paper in papers:
+        sources = paper.get("sources") or []
+        if not sources:
+            counts["unknown"] = counts.get("unknown", 0) + 1
+            continue
+        for source in sources:
+            counts[source] = counts.get(source, 0) + 1
+    return counts
 
 
 def _truncate(text: str | None, max_len: int = ABSTRACT_MAX_LEN) -> str:
@@ -37,6 +68,7 @@ def _print_paper(paper: dict, index: int) -> None:
     print(f"{index}. {paper.get('title') or 'Untitled'}")
     print(f"   Authors:  {_format_authors(paper.get('authors'))}")
     print(f"   Year:     {paper.get('year') or 'n/a'}")
+    print(f"   Source:   {_format_sources(paper.get('sources'))}")
     print(f"   Score:    {paper.get('relevance_score', 0):.4f}")
     print(f"   Abstract: {_truncate(paper.get('abstract'))}")
 
@@ -58,6 +90,19 @@ def _print_metrics(result: dict) -> None:
         f"{metrics.get('latency_ms', 0):.0f}ms",
         flush=True,
     )
+    fetched_by_source = metrics.get("papers_fetched_by_source") or {}
+    if fetched_by_source:
+        print(
+            f"Fetched: pool={metrics.get('papers_fetched', 0)} | "
+            f"{_format_source_counts(fetched_by_source)}",
+            flush=True,
+        )
+    results = result.get("papers") or []
+    if results:
+        print(
+            f"Results by source: {_format_source_counts(_count_result_sources(results))}",
+            flush=True,
+        )
     if rounds:
         print("Rounds:", flush=True)
         for record in rounds:

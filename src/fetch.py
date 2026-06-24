@@ -69,6 +69,7 @@ class FetchStats:
     api_calls: int = 0
     cache_hits: int = 0
     api_calls_by_source: dict[str, int] = field(default_factory=dict)
+    papers_fetched_by_source: dict[str, int] = field(default_factory=dict)
     fetch_errors: list[dict[str, Any]] = field(default_factory=list)
 
 
@@ -113,10 +114,16 @@ def fetch_all_sources(
                     "error": error,
                 }
             )
+        s2_count = 0
         for raw in papers:
             record = normalize_s2(raw, source_query=query)
             if record:
                 records.append(record)
+                s2_count += 1
+        if s2_count:
+            stats.papers_fetched_by_source["semantic_scholar"] = (
+                stats.papers_fetched_by_source.get("semantic_scholar", 0) + s2_count
+            )
 
     if "arxiv" in cfg.sources:
         papers, error, cache_hit = fetch_arxiv_soft(
@@ -140,10 +147,16 @@ def fetch_all_sources(
                     "error": error,
                 }
             )
+        arxiv_count = 0
         for raw in papers:
             record = normalize_arxiv(raw, source_query=query)
             if record:
                 records.append(record)
+                arxiv_count += 1
+        if arxiv_count:
+            stats.papers_fetched_by_source["arxiv"] = (
+                stats.papers_fetched_by_source.get("arxiv", 0) + arxiv_count
+            )
 
     merged = merge_paper_records(records)
     if len(merged) > cfg.max_candidates_per_run:
