@@ -1,20 +1,52 @@
 """
-Configuration settings for the paper retrieval system.
-
-Centralizes paths (data/, outputs/), API keys, rate limits, default search
-providers, and other runtime options. Values may be loaded from environment
-variables or a local config file.
+Configuration: paths, API keys, rate limits, and runtime defaults.
 """
 
 import os
 from pathlib import Path
 
-# Project root (parent of src/)
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+DATA_DIR = PROJECT_ROOT / "data"
+OUTPUTS_DIR = PROJECT_ROOT / "outputs"
+CACHE_DIR = OUTPUTS_DIR / "cache"
+CACHE_SHARDS_PER_SOURCE = 3  # SQLite shard DBs per source (RAM / working-set limit)
+DEFAULT_CACHE_TTL_DAYS = 7  # raw API cache expiry; 0 = never expire
+OPENALEX_MAX_PER_PAGE = 200
+OPENALEX_MIN_INTERVAL = 0.2  # polite pool with mailto; increase if no mailto
+PAPERS_DB_PATH = OUTPUTS_DIR / "papers.db"
+RUNS_DIR = OUTPUTS_DIR / "runs"
+EVAL_DIR = OUTPUTS_DIR / "eval"
+DEFAULT_CONFIG_PATH = DATA_DIR / "survey_config.json"
+HISTORY_RETENTION_DAYS = 60
+
+SEMANTIC_SCHOLAR_FETCH_LIMIT = 100
+SEMANTIC_SCHOLAR_MAX_OFFSET = 900
+SEMANTIC_SCHOLAR_MIN_INTERVAL = 1.0
+MAX_PAGES_PER_QUERY = 10
+DISPLAY_LIMIT = 10  # CLI / web preview count
+ARXIV_MAX_RESULTS = 100
+DEAD_QUERY_THRESHOLD = 3  # consecutive zero-accept runs before skip in survey mode
+
+EMBEDDING_MODEL_NAME = "all-MiniLM-L6-v2"
+EMBEDDING_PACKAGE_PIN = "sentence-transformers==5.5.1"
+
+
+def embedding_package_version() -> str:
+    try:
+        import importlib.metadata as metadata
+
+        return metadata.version("sentence-transformers")
+    except Exception:
+        return "unknown"
+
+ML_ACRONYM_EXPANSIONS: dict[str, str] = {
+    "rag": "retrieval augmented generation",
+    "llm": "large language models",
+    "llms": "large language models",
+}
 
 
 def _load_dotenv() -> None:
-    """Load .env into os.environ (does not override existing env vars)."""
     env_path = PROJECT_ROOT / ".env"
     if not env_path.exists():
         return
@@ -31,38 +63,7 @@ def _load_dotenv() -> None:
 
 _load_dotenv()
 
-DATA_DIR = PROJECT_ROOT / "data"
-OUTPUTS_DIR = PROJECT_ROOT / "outputs"
-CACHE_DIR = OUTPUTS_DIR / "cache"
-PAPERS_DB_PATH = OUTPUTS_DIR / "papers.db"
-
-DEFAULT_MAX_RESULTS = 10
-MAX_CANDIDATES_PER_RUN = 200
-TIMELINE_FROM_YEAR = 2020
-TIMELINE_TO_YEAR = 2026
-
-# Semantic Scholar API (set SEMANTIC_SCHOLAR_API_KEY in .env or environment)
 SEMANTIC_SCHOLAR_API_KEY = os.environ.get("SEMANTIC_SCHOLAR_API_KEY", "")
-SEMANTIC_SCHOLAR_MIN_INTERVAL = 1.0  # 1 request/sec with API key
-
-# Agent retrieval
-SEMANTIC_SCHOLAR_FETCH_LIMIT = 100  # papers per API call (Semantic Scholar max)
-MAX_PAGES_PER_QUERY = 2  # paginated fetches per search query (offset += limit)
-MAX_RESULTS_RETURN = 10  # top-N papers returned after embedding rank
-MAX_REFINEMENT_ROUNDS = 2
-RUNS_DIR = OUTPUTS_DIR / "runs"
-EVAL_DIR = OUTPUTS_DIR / "eval"
-
-# Scoring thresholds (all-MiniLM-L6-v2 cosine similarity)
-SCORE_GOOD = 0.40
-SCORE_TOP_MIN = 0.35
-MIN_GOOD_PAPERS = 3
-MIN_SCORE_GAP = 0.08
-
-# Ollama (local query refinement)
-OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
-OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "llama3.2")
-OLLAMA_TIMEOUT = 60
-
-# Search history retention (days)
-HISTORY_RETENTION_DAYS = 60  # ~2 months
+# OpenAlex: no API key. Optional mailto= for polite pool (higher rate limits).
+OPENALEX_MAILTO = os.environ.get("OPENALEX_MAILTO", "")
+OPENALEX_BASE_URL = os.environ.get("OPENALEX_BASE_URL", "https://api.openalex.org")

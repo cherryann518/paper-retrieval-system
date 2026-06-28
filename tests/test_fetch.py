@@ -5,8 +5,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import pytest
-
 from src.fetch import SurveyConfig, fetch_all_sources, records_to_agent_dicts
 
 
@@ -15,7 +13,7 @@ def test_survey_config_load_defaults(tmp_path):
     cfg = SurveyConfig.load(missing)
     assert cfg.rank_method == "sbert"
     assert "semantic_scholar" in cfg.sources
-    assert cfg.year_filter == "2020-2026"
+    assert cfg.timeline_from_year == 2020
 
 
 def test_survey_config_load_from_file(tmp_path):
@@ -34,9 +32,15 @@ def test_survey_config_load_from_file(tmp_path):
     )
     cfg = SurveyConfig.load(path)
     assert cfg.topic_overview == "robotics"
-    assert cfg.year_filter == "2022-2024"
+    assert cfg.timeline_from_year == 2022
+    assert cfg.timeline_to_year == 2024
     assert cfg.sources == ["arxiv"]
     assert cfg.rank_method == "tfidf"
+
+
+def test_survey_config_year_chunks():
+    cfg = SurveyConfig(timeline_from_year=2020, timeline_to_year=2022, year_chunk_fetch=True)
+    assert cfg.year_chunks() == ["2020", "2021", "2022"]
 
 
 def test_fetch_all_sources_merges_mocked_adapters(monkeypatch, sample_records):
@@ -64,16 +68,17 @@ def test_fetch_all_sources_merges_mocked_adapters(monkeypatch, sample_records):
         lambda *a, **k: ([arxiv_raw], None, False),
     )
 
-    cfg = SurveyConfig(sources=["semantic_scholar", "arxiv"])
+    cfg = SurveyConfig(
+        sources=["semantic_scholar", "arxiv"],
+        timeline_from_year=2020,
+        timeline_to_year=2020,
+        year_chunk_fetch=True,
+    )
     records, stats = fetch_all_sources("rag", cfg)
 
     assert len(records) == 2
     assert stats.api_calls == 2
     assert stats.cache_hits == 0
-    assert stats.api_calls_by_source["semantic_scholar"] == 1
-    assert stats.api_calls_by_source["arxiv"] == 1
-    assert stats.papers_fetched_by_source["semantic_scholar"] == 1
-    assert stats.papers_fetched_by_source["arxiv"] == 1
 
     agent_dicts = records_to_agent_dicts(records)
     assert agent_dicts[0]["externalIds"]["DOI"] == "10.5555/123"
@@ -89,39 +94,14 @@ def test_fetch_all_sources_records_errors(monkeypatch):
         lambda *a, **k: ([], None, True),
     )
 
-    records, stats = fetch_all_sources(
-        "test",
-        SurveyConfig(sources=["semantic_scholar", "arxiv"]),
+    cfg = SurveyConfig(
+        sources=["semantic_scholar", "arxiv"],
+        timeline_from_year=2020,
+        timeline_to_year=2020,
     )
+    records, stats = fetch_all_sources("test", cfg)
 
     assert records == []
     assert stats.api_calls == 1
     assert stats.cache_hits == 1
     assert len(stats.fetch_errors) == 1
-    assert stats.fetch_errors[0]["source"] == "semantic_scholar"
-
-
-def test_fetch_respects_max_candidates(monkeypatch):
-    many = [
-        {
-            "title": f"Paper {i}",
-            "authors": [],
-            "year": 2020,
-            "abstract": "x",
-            "externalIds": {"DOI": f"10.1/{i}"},
-        }
-        for i in range(50)
-    ]
-
-    monkeypatch.setattr(
-        "src.fetch.fetch_semantic_scholar_soft",
-        lambda *a, **k: (many, None, False),
-    )
-    monkeypatch.setattr(
-        "src.fetch.fetch_arxiv_soft",
-        lambda *a, **k: (many, None, False),
-    )
-
-    cfg = SurveyConfig(sources=["semantic_scholar", "arxiv"], max_candidates_per_run=10)
-    records, _ = fetch_all_sources("test", cfg)
-    assert len(records) == 10

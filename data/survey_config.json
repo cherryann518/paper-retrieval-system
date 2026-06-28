@@ -1,10 +1,18 @@
 {
   "topic_overview": "retrieval augmented generation",
-  "timeline_from_year": 2020,
+  "research_questions": [],
+  "query_hints": [],
+  "timeline_from_year": 2015,
   "timeline_to_year": 2026,
-  "fields_of_study": ["Computer Science"],
-  "min_relevance_score": 0.35,
-  "max_candidates_per_run": 200,
-  "sources": ["semantic_scholar", "arxiv"],
+  "fields_of_study": [],
+  "year_chunk_fetch": true,
+  "expand_acronyms": false,
+  "strict_timeline_filter": false,
+  "min_relevance_score": 0.25,
+  "display_limit": 10,
+  "max_queries": 12,
+  "cache_ttl_days": 7,
+  "dead_query_threshold": 3,
+  "sources": ["semantic_scholar", "arxiv", "openalex"],
   "rank_method": "sbert"
 }

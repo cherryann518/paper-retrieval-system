@@ -1,7 +1,5 @@
 """
-Flask web server for the paper retrieval pipeline.
-
-Serves a minimal frontend and exposes POST /search for ranked paper results.
+Flask web server — 1st baseline retrieval (no agent/LLM).
 """
 
 import time
@@ -9,14 +7,36 @@ from pathlib import Path
 
 from flask import Flask, jsonify, request, send_from_directory
 
-from src.agent import run_search_agent
 from src.artifacts import save_run_artifacts
+from src.fetch import SurveyConfig
 from src.history import get_search, list_history, save_search
-from src.tools import embed_and_rank, load_sample_papers
+from src.pipeline import run_retrieval
+from src.rank import embed_and_rank
+from src.tools import load_sample_papers
 
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
-
 app = Flask(__name__, static_folder=str(STATIC_DIR))
+
+_CONFIG_KEYS = {
+    "timeline_from_year",
+    "timeline_to_year",
+    "fields_of_study",
+    "year_chunk_fetch",
+    "expand_acronyms",
+    "strict_timeline_filter",
+    "min_relevance_score",
+    "display_limit",
+    "sources",
+    "rank_method",
+}
+
+
+def _config_overrides(body: dict) -> dict:
+    overrides = body.get("config") or {}
+    if not isinstance(overrides, dict):
+        return {}
+    flat = {k: body[k] for k in _CONFIG_KEYS if k in body}
+    return {**overrides, **flat}
 
 
 @app.get("/")
@@ -24,58 +44,64 @@ def index():
     return send_from_directory(STATIC_DIR, "index.html")
 
 
+@app.get("/config")
+def get_config():
+    return jsonify(SurveyConfig.load().to_public_dict())
+
+
 @app.post("/search")
 def search():
     body = request.get_json(silent=True) or {}
     query = (body.get("query") or "").strip()
     offline = bool(body.get("offline", False))
+    survey_mode = bool(body.get("survey_mode", False))
 
     if not query:
         return jsonify({"error": "query is required"}), 400
 
     started = time.perf_counter()
-    source = "offline" if offline else "live"
-    print(f"[search] query={query!r} source={source}", flush=True)
+    overrides = _config_overrides(body)
+    print(f"[search] query={query!r} source={'offline' if offline else 'live'}", flush=True)
 
     if offline:
         papers = load_sample_papers()
-        if not papers:
-            return jsonify({"query": query, "papers": []})
+        ranked = embed_and_rank(query, papers) if papers else []
+        config = SurveyConfig.load().apply_overrides(overrides)
+        display = ranked[: config.display_limit]
         result = {
             "query": query,
-            "papers": embed_and_rank(query, papers),
+            "search_query": query,
+            "search_queries": [query],
+            "config": config.to_public_dict(),
+            "papers": ranked,
+            "papers_display": display,
+            "rejects": [],
             "status": "offline",
-            "refinement_rounds": 0,
-            "search_queries_used": [query],
-            "acceptance_reason": "offline_mode",
-            "mode": "offline",
-            "rounds": [],
-            "metrics": {"latency_ms": 0, "api_calls": 0, "ollama_calls": 0},
+            "metrics": {
+                "latency_ms": 0,
+                "api_calls": 0,
+                "cache_hits": 0,
+                "papers_accepted": len(ranked),
+                "papers_display": len(display),
+            },
             "fetch_errors": [],
         }
     else:
-        result = run_search_agent(query)
+        result = run_retrieval(
+            query,
+            config_overrides=overrides,
+            survey_mode=survey_mode,
+        )
         if result.get("metrics"):
-            result["metrics"]["latency_ms"] = round(
-                (time.perf_counter() - started) * 1000, 1
-            )
+            result["metrics"]["latency_ms"] = round((time.perf_counter() - started) * 1000, 1)
 
-    ranked = result["papers"]
+    display_count = len(result.get("papers_display") or [])
+    corpus_count = len(result.get("papers") or [])
     print(
-        f"[search] retrieved {len(ranked)} papers status={result['status']}",
+        f"[search] corpus={corpus_count} display={display_count} status={result['status']}",
         flush=True,
     )
-
-    if ranked:
-        top = ranked[0]
-        print(
-            f"[search] top result: {top.get('title')} "
-            f"(score={top.get('relevance_score', 0):.4f})",
-            flush=True,
-        )
-
     elapsed_ms = (time.perf_counter() - started) * 1000
-    print(f"[search] done in {elapsed_ms / 1000:.1f}s", flush=True)
 
     if not offline:
         try:

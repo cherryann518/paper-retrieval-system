@@ -104,3 +104,54 @@ Feed metadata includes `opensearch:totalResults`, `opensearch:startIndex`, `open
 ### Rate limits
 
 Polite use: ~1 request per 3 seconds. Cache responses aggressively.
+
+---
+
+## OpenAlex
+
+**Endpoint:** `GET https://api.openalex.org/works`
+
+**Authentication:** None required. No API key. Optional `mailto=` query parameter (set `OPENALEX_MAILTO` in `.env`) for the [polite pool](https://docs.openalex.org/how-to-use-the-api/rate-limits-and-authentication) and higher rate limits.
+
+### Input parameters
+
+| Parameter | Type | Required | Notes |
+|-----------|------|----------|-------|
+| `search` | string | yes* | Full-text search |
+| `filter` | string | no | e.g. `publication_year:2020` |
+| `per_page` | int | no | 1–200 (default 25) |
+| `cursor` | string | no | `*` for first page; use `meta.next_cursor` |
+| `select` | string | no | Comma-separated fields |
+| `mailto` | string | no | Contact email for polite pool |
+
+### Example request
+
+```
+GET /works?search=retrieval+augmented+generation&per_page=25&cursor=*&filter=publication_year:2020&mailto=you@example.com
+```
+
+### Example response (abbreviated)
+
+```json
+{
+  "meta": { "count": 100, "next_cursor": "abc123" },
+  "results": [
+    {
+      "id": "https://openalex.org/W2741809807",
+      "doi": "https://doi.org/10.5555/1234567",
+      "title": "Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks",
+      "publication_year": 2020,
+      "abstract_inverted_index": { "Large": [0], "language": [1] },
+      "authorships": [{ "author": { "display_name": "Patrick Lewis" } }],
+      "cited_by_count": 4200,
+      "ids": { "openalex": "https://openalex.org/W2741809807", "arxiv": "https://arxiv.org/abs/2005.11401" }
+    }
+  ]
+}
+```
+
+### Rate limits
+
+- Default pool: ~1 req/s without `mailto`.
+- Polite pool with `mailto`: significantly higher (see OpenAlex docs).
+- Raw responses cached in SQLite shards with configurable TTL (`cache_ttl_days`).

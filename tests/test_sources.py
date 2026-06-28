@@ -28,7 +28,7 @@ def test_parse_arxiv_xml_fixture():
 
 
 def test_semantic_scholar_cache_roundtrip(tmp_path, monkeypatch):
-    monkeypatch.setattr("src.sources.semantic_scholar._use_cache", True)
+    monkeypatch.setattr("src.cache.is_cache_enabled", lambda: True)
     monkeypatch.setattr("src.cache.CACHE_DIR", tmp_path)
 
     payload = json.loads((FIXTURES / "s2_sample.json").read_text())

@@ -12,7 +12,7 @@ import urllib.parse
 import urllib.request
 from typing import Any
 
-from src.cache import get_cached, make_cache_key, set_cached
+from src.cache import get_cached, is_cache_enabled, make_cache_key, set_cached
 from src.config import SEMANTIC_SCHOLAR_API_KEY, SEMANTIC_SCHOLAR_MIN_INTERVAL
 
 SEMANTIC_SCHOLAR_SEARCH_URL = "https://api.semanticscholar.org/graph/v1/paper/search"
@@ -25,16 +25,10 @@ SEMANTIC_SCHOLAR_FIELDS = (
 )
 
 _last_s2_request_at = 0.0
-_use_cache = True
 
 
 class SemanticScholarError(Exception):
     """Raised when a Semantic Scholar API request fails."""
-
-
-def set_cache_enabled(enabled: bool) -> None:
-    global _use_cache
-    _use_cache = enabled
 
 
 def _wait_for_s2_rate_limit() -> None:
@@ -46,11 +40,8 @@ def _wait_for_s2_rate_limit() -> None:
         time.sleep(SEMANTIC_SCHOLAR_MIN_INTERVAL - elapsed)
 
 
-def _s2_request_headers() -> dict[str, str]:
-    headers = {
-        "Accept": "application/json",
-        "User-Agent": "PaperRetrievalSystem/1.0",
-    }
+def _s2_headers() -> dict[str, str]:
+    headers = {"Accept": "application/json", "User-Agent": "PaperRetrievalSystem/1.0"}
     if SEMANTIC_SCHOLAR_API_KEY:
         headers["x-api-key"] = SEMANTIC_SCHOLAR_API_KEY
     return headers
@@ -64,23 +55,15 @@ def _parse_s2_papers(payload: dict[str, Any]) -> list[dict]:
         papers.append(
             {
                 "paperId": item.get("paperId"),
-                "corpusId": item.get("corpusId"),
-                "url": item.get("url"),
                 "title": item.get("title"),
                 "authors": [
-                    author["name"]
-                    for author in (item.get("authors") or [])
-                    if author.get("name")
+                    a["name"] for a in (item.get("authors") or []) if a.get("name")
                 ],
                 "year": item.get("year"),
                 "abstract": item.get("abstract"),
                 "venue": item.get("venue"),
                 "citationCount": item.get("citationCount"),
-                "publicationDate": item.get("publicationDate"),
-                "externalIds": {
-                    "arXiv": raw_ids.get("ArXiv"),
-                    "DOI": raw_ids.get("DOI"),
-                },
+                "externalIds": {"arXiv": raw_ids.get("ArXiv"), "DOI": raw_ids.get("DOI")},
                 "pdf_url": oa_pdf.get("url") if isinstance(oa_pdf, dict) else None,
             }
         )
@@ -89,24 +72,12 @@ def _parse_s2_papers(payload: dict[str, Any]) -> list[dict]:
 
 def search_semantic_scholar(
     query: str,
-    limit: int = 5,
+    limit: int = 100,
     offset: int = 0,
     *,
     year: str | None = None,
     fields_of_study: str | None = None,
 ) -> tuple[list[dict], bool]:
-    """
-    Search Semantic Scholar for papers matching *query*.
-
-    Returns (papers, cache_hit).
-    """
-    if not query or not query.strip():
-        raise ValueError("query must be a non-empty string")
-    if limit < 1:
-        raise ValueError("limit must be at least 1")
-    if offset < 0:
-        raise ValueError("offset must be non-negative")
-
     params: dict[str, Any] = {
         "query": query.strip(),
         "limit": limit,
@@ -119,23 +90,21 @@ def search_semantic_scholar(
         params["fieldsOfStudy"] = fields_of_study
 
     cache_key = make_cache_key("semantic_scholar", SEMANTIC_SCHOLAR_SEARCH_URL, params)
-    if _use_cache:
+    if is_cache_enabled():
         cached = get_cached("semantic_scholar", cache_key)
         if cached is not None:
             return _parse_s2_papers(cached), True
 
-    encoded = urllib.parse.urlencode(params)
-    url = f"{SEMANTIC_SCHOLAR_SEARCH_URL}?{encoded}"
-    request = urllib.request.Request(url, headers=_s2_request_headers())
-
+    url = f"{SEMANTIC_SCHOLAR_SEARCH_URL}?{urllib.parse.urlencode(params)}"
+    request = urllib.request.Request(url, headers=_s2_headers())
     payload = None
     last_error: SemanticScholarError | None = None
 
     for attempt in range(SEMANTIC_SCHOLAR_MAX_RETRIES + 1):
         try:
             _wait_for_s2_rate_limit()
-            with urllib.request.urlopen(request, timeout=SEMANTIC_SCHOLAR_TIMEOUT) as response:
-                payload = json.loads(response.read().decode())
+            with urllib.request.urlopen(request, timeout=SEMANTIC_SCHOLAR_TIMEOUT) as resp:
+                payload = json.loads(resp.read().decode())
             _last_s2_request_at = time.monotonic()
             break
         except urllib.error.HTTPError as exc:
@@ -145,56 +114,38 @@ def search_semantic_scholar(
             except json.JSONDecodeError:
                 message = body or exc.reason
             last_error = SemanticScholarError(f"HTTP {exc.code}: {message}")
-
             if exc.code == 429 and attempt < SEMANTIC_SCHOLAR_MAX_RETRIES:
-                retry_after = exc.headers.get("Retry-After")
-                if retry_after and retry_after.isdigit():
-                    wait = float(retry_after)
-                elif SEMANTIC_SCHOLAR_API_KEY:
+                if SEMANTIC_SCHOLAR_API_KEY:
                     wait = SEMANTIC_SCHOLAR_MIN_INTERVAL
                 else:
-                    wait = min(
-                        SEMANTIC_SCHOLAR_INITIAL_BACKOFF * (2**attempt),
-                        60.0,
-                    )
+                    wait = min(SEMANTIC_SCHOLAR_INITIAL_BACKOFF * (2**attempt), 60.0)
                     wait *= random.uniform(1.0, 1.5)
                 time.sleep(wait)
                 continue
-
             raise last_error from exc
         except urllib.error.URLError as exc:
             raise SemanticScholarError(f"Request failed: {exc.reason}") from exc
-        except json.JSONDecodeError as exc:
-            raise SemanticScholarError("Invalid JSON response from Semantic Scholar API") from exc
 
     if payload is None:
-        raise last_error or SemanticScholarError("Request failed after retries")
+        raise last_error or SemanticScholarError("Request failed")
 
-    if _use_cache:
+    if is_cache_enabled():
         set_cached("semantic_scholar", cache_key, payload)
-
     return _parse_s2_papers(payload), False
 
 
 def fetch_semantic_scholar_soft(
     query: str,
-    limit: int = 5,
+    limit: int = 100,
     offset: int = 0,
     *,
     year: str | None = None,
     fields_of_study: str | None = None,
 ) -> tuple[list[dict], str | None, bool]:
-    """
-    Like search_semantic_scholar but returns ([], error_message, cache_hit) instead of raising.
-    """
     try:
-        papers, cache_hit = search_semantic_scholar(
-            query,
-            limit=limit,
-            offset=offset,
-            year=year,
-            fields_of_study=fields_of_study,
+        papers, hit = search_semantic_scholar(
+            query, limit=limit, offset=offset, year=year, fields_of_study=fields_of_study
         )
-        return papers, None, cache_hit
+        return papers, None, hit
     except (SemanticScholarError, ValueError) as exc:
         return [], str(exc), False

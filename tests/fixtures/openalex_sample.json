@@ -1,0 +1,43 @@
+{
+  "meta": {
+    "count": 1,
+    "per_page": 25,
+    "next_cursor": null
+  },
+  "results": [
+    {
+      "id": "https://openalex.org/W2741809807",
+      "doi": "https://doi.org/10.5555/1234567",
+      "title": "Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks",
+      "publication_year": 2020,
+      "cited_by_count": 4200,
+      "type": "article",
+      "authorships": [
+        {
+          "author": {
+            "display_name": "Patrick Lewis"
+          }
+        }
+      ],
+      "abstract_inverted_index": {
+        "Large": [0],
+        "language": [1],
+        "models": [2],
+        "with": [3],
+        "retrieval": [4]
+      },
+      "primary_location": {
+        "source": {
+          "display_name": "NeurIPS"
+        },
+        "pdf_url": "https://example.com/rag.pdf",
+        "landing_page_url": "https://example.com/rag"
+      },
+      "ids": {
+        "openalex": "https://openalex.org/W2741809807",
+        "doi": "https://doi.org/10.5555/1234567",
+        "arxiv": "https://arxiv.org/abs/2005.11401"
+      }
+    }
+  ]
+}

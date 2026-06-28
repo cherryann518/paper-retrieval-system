@@ -2,29 +2,35 @@
   {
     "query": "CRISPR",
     "category": "short_acronym",
-    "note": "Biology acronym — not expanded in code; may need Ollama or a precise search string.",
+    "note": "Biology acronym — single token.",
     "targets": [
       {
         "title": "A programmable dual-RNA-guided DNA endonuclease in adaptive bacterial immunity",
         "doi": "10.1126/science.1225829"
+      },
+      {
+        "title": "Development and Applications of CRISPR-Cas9 for Genome Engineering",
+        "doi": "10.1016/j.cell.2014.05.010"
       }
     ]
   },
   {
     "query": "coral bleaching",
     "category": "short",
-    "note": "Two-word topic — broad fetch, often flat_scores; good refinement trigger.",
     "targets": [
       {
         "title": "Global warming and recurrent mass bleaching of corals",
         "doi": "10.1038/nature21707"
+      },
+      {
+        "title": "Climate change causes bleaching and mortality of corals on the Great Barrier Reef",
+        "doi": "10.1071/mf995157"
       }
     ]
   },
   {
     "query": "why do antibiotics stop working over time",
     "category": "vague",
-    "note": "Natural phrasing for antimicrobial resistance — not paper keywords.",
     "targets": [
       {
         "title": "Antibiotic resistance threats in the United States",
@@ -35,7 +41,6 @@
   {
     "query": "how plants survive long droughts",
     "category": "vague",
-    "note": "Ecology/plant science in plain English.",
     "targets": [
       {
         "title": "Plant responses to water stress",
@@ -46,7 +51,6 @@
   {
     "query": "why volcanoes form near coastlines",
     "category": "vague",
-    "note": "Geology concept without jargon — refinement should add subduction/plate terms.",
     "targets": [
       {
         "title": "Subduction zone geochemistry",
@@ -57,7 +61,6 @@
   {
     "query": "what happens in the brain during sleep",
     "category": "vague",
-    "note": "Neuroscience casual phrasing.",
     "targets": [
       {
         "title": "The neuroscience of sleep: genetics, cellular physiology and subcortical networks",
@@ -68,7 +71,6 @@
   {
     "query": "does growing up poor affect children later in life",
     "category": "vague",
-    "note": "Social science question — vague vs keyword search.",
     "targets": [
       {
         "title": "The long-term effects of childhood poverty on adult outcomes",
@@ -77,20 +79,42 @@
     ]
   },
   {
+    "query": "how vaccines train the immune system",
+    "category": "vague",
+    "targets": [
+      {
+        "title": "Vaccines and the immune system",
+        "doi": "10.1016/j.jinf.2003.09.023"
+      }
+    ]
+  },
+  {
+    "query": "why do glaciers melt faster now",
+    "category": "vague",
+    "targets": [
+      {
+        "title": "Contribution of glaciers to sea-level rise since the 1961–2005",
+        "doi": "10.1126/science.1172956"
+      }
+    ]
+  },
+  {
     "query": "hallmarks of cancer cell biology review",
     "category": "control",
-    "note": "Keyword-rich — should work in one fetch without refinement.",
     "targets": [
       {
         "title": "Hallmarks of cancer: the next generation",
         "doi": "10.1016/j.cell.2011.02.013"
+      },
+      {
+        "title": "The hallmarks of cancer",
+        "doi": "10.1016/s0092-8674(00)81683-9"
       }
     ]
   },
   {
     "query": "The Structure of Scientific Revolutions",
     "category": "control",
-    "note": "Exact famous work title — easy one-shot lookup.",
     "targets": [
       {
         "title": "The Structure of Scientific Revolutions",
@@ -99,15 +123,29 @@
     ]
   },
   {
+    "query": "deep learning neural networks survey",
+    "category": "control",
+    "targets": [
+      {
+        "title": "Deep learning",
+        "doi": "10.1038/nature14539"
+      }
+    ]
+  },
+  {
     "query": "how cities can reduce air pollution",
     "category": "casual",
-    "note": "Broad policy/environment topic — no target paper; compare scores only.",
+    "note": "Broad topic — score-only, no fixed targets.",
+    "targets": []
+  },
+  {
+    "query": "machine learning in healthcare diagnosis",
+    "category": "casual",
     "targets": []
   },
   {
     "query": "attention is all you need transformer",
     "category": "arxiv_only",
-    "note": "Famous arXiv preprint — target by arXiv ID only.",
     "targets": [
       {
         "title": "Attention Is All You Need",
@@ -118,11 +156,135 @@
   {
     "query": "bert pre-training deep bidirectional transformers",
     "category": "arxiv_only",
-    "note": "arXiv-preprint target — tests cross-source dedupe with S2.",
     "targets": [
       {
         "title": "BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding",
         "arxiv": "1810.04805"
+      }
+    ]
+  },
+  {
+    "query": "retrieval augmented generation language models",
+    "category": "cs_rag",
+    "targets": [
+      {
+        "title": "Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks",
+        "arxiv": "2005.11401"
+      },
+      {
+        "title": "REALM: Retrieval-Augmented Language Model Pre-Training",
+        "arxiv": "2002.08909"
+      }
+    ]
+  },
+  {
+    "query": "dense passage retrieval open domain question answering",
+    "category": "cs_rag",
+    "targets": [
+      {
+        "title": "Dense Passage Retrieval for Open-Domain Question Answering",
+        "arxiv": "2004.04906"
+      }
+    ]
+  },
+  {
+    "query": "RAG",
+    "category": "short_acronym_cs",
+    "note": "CS acronym — expand_acronyms=false by default.",
+    "targets": [
+      {
+        "title": "Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks",
+        "arxiv": "2005.11401"
+      }
+    ]
+  },
+  {
+    "query": "microplastics in ocean food chain",
+    "category": "short",
+    "targets": [
+      {
+        "title": "Microplastics in the marine environment",
+        "doi": "10.1016/j.marpolbul.2011.05.030"
+      }
+    ]
+  },
+  {
+    "query": "black holes event horizon telescope",
+    "category": "short",
+    "targets": [
+      {
+        "title": "First M87 Event Horizon Telescope Results. I. The Shadow of the Supermassive Black Hole",
+        "doi": "10.3847/2041-8213/ab0ec7"
+      }
+    ]
+  },
+  {
+    "query": "CRISPR gene editing human embryos ethics",
+    "category": "short",
+    "targets": [
+      {
+        "title": "Ethical considerations of human embryo genome editing",
+        "doi": "10.1016/j.stem.2015.12.001"
+      }
+    ]
+  },
+  {
+    "query": "plate tectonics continental drift evidence",
+    "category": "control",
+    "targets": [
+      {
+        "title": "Plate tectonics",
+        "doi": "10.1038/35075500"
+      }
+    ]
+  },
+  {
+    "query": "randomized controlled trial statistical power",
+    "category": "control",
+    "targets": [
+      {
+        "title": "Statistical Power Analysis for the Behavioral Sciences",
+        "doi": "10.4324/9780203771587"
+      }
+    ]
+  },
+  {
+    "query": "how do mRNA vaccines work",
+    "category": "vague",
+    "targets": [
+      {
+        "title": "mRNA vaccines — a new era in vaccinology",
+        "doi": "10.1038/nrd.2017.243"
+      }
+    ]
+  },
+  {
+    "query": "what causes earthquakes along fault lines",
+    "category": "vague",
+    "targets": [
+      {
+        "title": "Earthquake mechanics on a dipping fault",
+        "doi": "10.1029/jb085ib10p06176"
+      }
+    ]
+  },
+  {
+    "query": "graph neural networks survey",
+    "category": "cs_rag",
+    "targets": [
+      {
+        "title": "A Comprehensive Survey on Graph Neural Networks",
+        "arxiv": "1901.00596"
+      }
+    ]
+  },
+  {
+    "query": "climate change IPCC synthesis report",
+    "category": "control",
+    "targets": [
+      {
+        "title": "Climate Change 2023 Synthesis Report",
+        "doi": "10.59327/ipcc/ar6-9789291691647"
       }
     ]
   }

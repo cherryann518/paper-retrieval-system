@@ -30,16 +30,23 @@ def paper_id_from_ids(
     *,
     doi: str | None = None,
     arxiv_id: str | None = None,
+    openalex_id: str | None = None,
     s2_paper_id: str | None = None,
     title: str | None = None,
     year: int | None = None,
 ) -> str:
-    """Stable identity: DOI → arXiv → S2 paperId → title fingerprint."""
+    """Stable identity: DOI → arXiv → OpenAlex → S2 paperId → title fingerprint."""
     if doi:
-        return f"doi:{doi.lower().strip()}"
+        cleaned = doi.lower().strip()
+        cleaned = re.sub(r"^https?://doi\.org/", "", cleaned)
+        return f"doi:{cleaned}"
     if arxiv_id:
         cleaned = re.sub(r"v\d+$", "", arxiv_id.lower().strip())
         return f"arxiv:{cleaned}"
+    if openalex_id:
+        cleaned = openalex_id.strip()
+        cleaned = re.sub(r"^https?://openalex\.org/", "", cleaned, flags=re.IGNORECASE)
+        return f"openalex:{cleaned.upper()}"
     if s2_paper_id:
         return f"s2:{s2_paper_id.strip()}"
     return f"fp:{title_fingerprint(title, year)}"
@@ -54,6 +61,7 @@ class PaperRecord:
     abstract: str | None = None
     doi: str | None = None
     arxiv_id: str | None = None
+    openalex_id: str | None = None
     s2_paper_id: str | None = None
     pdf_url: str | None = None
     venue: str | None = None
@@ -66,8 +74,7 @@ class PaperRecord:
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
-    def to_agent_dict(self) -> dict[str, Any]:
-        """Convert to legacy agent/UI dict shape with externalIds."""
+    def to_paper_dict(self) -> dict[str, Any]:
         return {
             "paper_id": self.paper_id,
             "title": self.title,
@@ -77,7 +84,9 @@ class PaperRecord:
             "externalIds": {
                 "DOI": self.doi,
                 "arXiv": self.arxiv_id,
+                "OpenAlex": self.openalex_id,
             },
+            "openalex_id": self.openalex_id,
             "s2_paper_id": self.s2_paper_id,
             "pdf_url": self.pdf_url,
             "venue": self.venue,
@@ -86,47 +95,23 @@ class PaperRecord:
             "source_queries": list(self.source_queries),
         }
 
-    @classmethod
-    def from_agent_dict(cls, paper: dict[str, Any]) -> PaperRecord:
-        ids = paper.get("externalIds") or {}
-        doi = paper.get("doi") or ids.get("DOI")
-        arxiv_id = paper.get("arxiv_id") or ids.get("arXiv")
-        s2_paper_id = paper.get("s2_paper_id")
-        title = paper.get("title") or ""
-        year = paper.get("year")
-        return cls(
-            paper_id=paper.get("paper_id")
-            or paper_id_from_ids(
-                doi=doi,
-                arxiv_id=arxiv_id,
-                s2_paper_id=s2_paper_id,
-                title=title,
-                year=year,
-            ),
-            title=title,
-            authors=list(paper.get("authors") or []),
-            year=year,
-            abstract=paper.get("abstract"),
-            doi=doi,
-            arxiv_id=arxiv_id,
-            s2_paper_id=s2_paper_id,
-            pdf_url=paper.get("pdf_url"),
-            venue=paper.get("venue"),
-            citation_count=paper.get("citation_count"),
-            sources=list(paper.get("sources") or []),
-            source_queries=list(paper.get("source_queries") or []),
-            first_seen_at=paper.get("first_seen_at") or _utc_now_iso(),
-            last_seen_at=paper.get("last_seen_at") or _utc_now_iso(),
-        )
+    to_agent_dict = to_paper_dict
 
 
-def agent_paper_key(paper: dict[str, Any]) -> str:
-    """Dedupe key for in-run agent pool (DOI → arXiv → title)."""
-    ids = paper.get("externalIds") or {}
-    if ids.get("DOI"):
-        return f"doi:{ids['DOI'].lower()}"
-    if ids.get("arXiv"):
-        return f"arxiv:{ids['arXiv'].lower()}"
-    if paper.get("paper_id"):
-        return paper["paper_id"]
-    return f"title:{normalize_title(paper.get('title'))}"
+def paper_dedupe_key(paper: dict[str, Any]) -> str:
+    """In-run dedupe key — same priority as paper_id_from_ids (E1)."""
+    from src.identifiers import canonical_paper_id_from_dict
+
+    return canonical_paper_id_from_dict(paper)
+
+
+def dedupe_papers(papers: list[dict]) -> list[dict]:
+    seen: set[str] = set()
+    unique: list[dict] = []
+    for paper in papers:
+        key = paper_dedupe_key(paper)
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(paper)
+    return unique

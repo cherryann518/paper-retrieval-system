@@ -1,11 +1,5 @@
 """Runtime flags for retrieval pipeline."""
 
-from __future__ import annotations
+from src.cache import purge_expired_cache, set_cache_enabled, set_cache_ttl_days
 
-from src.sources import arxiv as arxiv_source
-from src.sources import semantic_scholar as s2_source
-
-
-def set_cache_enabled(enabled: bool) -> None:
-    s2_source.set_cache_enabled(enabled)
-    arxiv_source.set_cache_enabled(enabled)
+__all__ = ["purge_expired_cache", "set_cache_enabled", "set_cache_ttl_days"]

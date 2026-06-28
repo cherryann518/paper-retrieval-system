@@ -1,72 +1,44 @@
 """
-Entry point for the paper retrieval system.
-
-Search Semantic Scholar for a topic, rank results by semantic relevance,
-and print a readable summary to the terminal.
+CLI entry point — 1st baseline retrieval.
 """
 
 import argparse
+import json
 import sys
 
-from src.agent import run_search_agent
 from src.artifacts import save_run_artifacts
+from src.pipeline import run_retrieval
+from src.rank import embed_and_rank
 from src.runtime import set_cache_enabled
-from src.tools import embed_and_rank, load_sample_papers
+from src.tools import load_sample_papers
 
 ABSTRACT_MAX_LEN = 300
 SEPARATOR = "─" * 72
 SOURCE_LABELS = {
     "semantic_scholar": "Semantic Scholar",
     "arxiv": "arXiv",
+    "openalex": "OpenAlex",
 }
 
 
 def _format_sources(sources: list[str] | None) -> str:
     if not sources:
         return "unknown"
-    return ", ".join(SOURCE_LABELS.get(source, source) for source in sources)
-
-
-def _format_source_counts(counts: dict[str, int]) -> str:
-    if not counts:
-        return "n/a"
-    return " | ".join(
-        f"{SOURCE_LABELS.get(source, source)}={count}"
-        for source, count in sorted(counts.items())
-    )
-
-
-def _count_result_sources(papers: list[dict]) -> dict[str, int]:
-    counts: dict[str, int] = {}
-    for paper in papers:
-        sources = paper.get("sources") or []
-        if not sources:
-            counts["unknown"] = counts.get("unknown", 0) + 1
-            continue
-        for source in sources:
-            counts[source] = counts.get(source, 0) + 1
-    return counts
+    return ", ".join(SOURCE_LABELS.get(s, s) for s in sources)
 
 
 def _truncate(text: str | None, max_len: int = ABSTRACT_MAX_LEN) -> str:
     if not text:
         return "(no abstract)"
     text = text.strip()
-    if len(text) <= max_len:
-        return text
-    return text[:max_len].rstrip() + "..."
-
-
-def _format_authors(authors: list[str] | None) -> str:
-    if not authors:
-        return "Unknown"
-    return ", ".join(authors)
+    return text if len(text) <= max_len else text[:max_len].rstrip() + "..."
 
 
 def _print_paper(paper: dict, index: int) -> None:
+    authors = ", ".join(paper.get("authors") or []) or "Unknown"
     print(SEPARATOR)
     print(f"{index}. {paper.get('title') or 'Untitled'}")
-    print(f"   Authors:  {_format_authors(paper.get('authors'))}")
+    print(f"   Authors:  {authors}")
     print(f"   Year:     {paper.get('year') or 'n/a'}")
     print(f"   Source:   {_format_sources(paper.get('sources'))}")
     print(f"   Score:    {paper.get('relevance_score', 0):.4f}")
@@ -74,76 +46,72 @@ def _print_paper(paper: dict, index: int) -> None:
 
 
 def _print_metrics(result: dict) -> None:
-    metrics = result.get("metrics") or {}
-    rounds = result.get("rounds") or []
+    m = result.get("metrics") or {}
     print(
-        f"Status: {result['status']} | "
-        f"refinements: {result.get('refinement_rounds', 0)} | "
-        f"reason: {result.get('acceptance_reason', '')}",
+        f"Status: {result['status']} | queries={m.get('search_queries_run', 1)} "
+        f"(skipped={m.get('search_queries_skipped', 0)}) | "
+        f"corpus={m.get('papers_accepted', 0)} accepted "
+        f"({m.get('papers_rejected', 0)} rejected) | "
+        f"showing {m.get('papers_display', 0)}/{m.get('papers_accepted', 0)} | "
+        f"pool={m.get('papers_in_pool', 0)} | top={m.get('top_score', 0):.3f} | "
+        f"min_score={m.get('min_relevance_score', 0)} | "
+        f"rank={m.get('rank_method')} | api={m.get('api_calls', 0)} | "
+        f"{m.get('latency_ms', 0):.0f}ms",
         flush=True,
     )
-    print(
-        f"Metrics: top={metrics.get('top_score', 0):.3f} | "
-        f"good={metrics.get('good_count', 0)} | "
-        f"api={metrics.get('api_calls', 0)} | "
-        f"ollama={metrics.get('ollama_calls', 0)} | "
-        f"{metrics.get('latency_ms', 0):.0f}ms",
-        flush=True,
-    )
-    fetched_by_source = metrics.get("papers_fetched_by_source") or {}
-    if fetched_by_source:
-        print(
-            f"Fetched: pool={metrics.get('papers_fetched', 0)} | "
-            f"{_format_source_counts(fetched_by_source)}",
-            flush=True,
-        )
-    results = result.get("papers") or []
-    if results:
-        print(
-            f"Results by source: {_format_source_counts(_count_result_sources(results))}",
-            flush=True,
-        )
-    if rounds:
-        print("Rounds:", flush=True)
-        for record in rounds:
-            print(
-                f"  [{record['round']}] query={record['search_query']!r} "
-                f"batch={record['batch_size']} pool={record['pool_size']} "
-                f"top={record['top_score']:.3f} "
-                f"batch_top={record.get('batch_top_score', 0):.3f} "
-                f"ok={record['acceptable']}",
-                flush=True,
-            )
     if result.get("fetch_errors"):
         print(f"Fetch errors: {len(result['fetch_errors'])} (partial data used)", flush=True)
+
+    qs = m.get("query_state")
+    if qs:
+        print(
+            f"Query state: consecutive_zero_accept={qs.get('consecutive_zero_accept', 0)} | "
+            f"last accepted={qs.get('accepted_count', 0)} rejected={qs.get('rejected_count', 0)}",
+            flush=True,
+        )
+
+    skipped = result.get("skipped_queries") or []
+    if skipped:
+        print(f"Skipped dead queries ({len(skipped)}):", flush=True)
+        for row in skipped:
+            print(
+                f"  - {row['query']!r} (zero-accept streak={row['consecutive_zero_accept']})",
+                flush=True,
+            )
+
+    div = m.get("score_divergence") or {}
+    if div.get("count"):
+        print(
+            f"Score divergence (SBERT vs lexical): avg |delta|={div.get('avg_abs_delta', 0):.3f}",
+            flush=True,
+        )
+        for row in div.get("top_divergent") or []:
+            title = row["title"]
+            if len(title) > 60:
+                title = title[:60] + "…"
+            print(
+                f"  - {title} | sbert={row['sbert_cosine']:.3f} "
+                f"lexical={row['lexical_v1']:.3f} delta={row['delta']:+.3f}",
+                flush=True,
+            )
     print(flush=True)
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Search and rank academic papers by semantic relevance."
-    )
+    parser = argparse.ArgumentParser(description="Search and rank academic papers.")
     parser.add_argument("topic", help="Search topic or keywords")
+    parser.add_argument("--offline", action="store_true", help="Use local sample papers")
+    parser.add_argument("--no-cache", action="store_true", help="Disable raw API cache")
+    parser.add_argument("--no-local", action="store_true", help="Skip local corpus read")
     parser.add_argument(
-        "--offline",
+        "--survey",
         action="store_true",
-        help="Use local sample papers instead of Semantic Scholar (avoids API rate limits)",
+        help="Run all queries from survey_config (topic, RQs, hints)",
     )
     parser.add_argument(
-        "--mode",
-        choices=["agent", "single_fetch", "multi_fetch_same"],
-        default="agent",
-        help="Retrieval mode (live search only)",
-    )
-    parser.add_argument(
-        "--no-refine",
+        "--json",
         action="store_true",
-        help="Disable Ollama query refinement (agent mode only)",
-    )
-    parser.add_argument(
-        "--no-cache",
-        action="store_true",
-        help="Disable source API response cache (live search only)",
+        help="Print full JSON result (includes full RAG corpus)",
     )
     args = parser.parse_args()
 
@@ -155,35 +123,51 @@ def main() -> None:
     if args.offline:
         print(f"Using sample papers for: {topic!r}\n", flush=True)
         papers = load_sample_papers()
-        if not papers:
-            print("No papers found.")
-            return
         ranked = embed_and_rank(topic, papers)
-        print(f"Found {len(ranked)} papers, sorted by relevance...\n")
-    else:
-        if args.no_cache:
-            set_cache_enabled(False)
-        print(f"Running search ({args.mode}) for: {topic!r}\n", flush=True)
-        result = run_search_agent(
-            topic,
-            mode=args.mode,
-            refine=not args.no_refine,
-        )
-        run_dir = save_run_artifacts(result)
-        print(f"Artifacts: {run_dir}\n", flush=True)
-        _print_metrics(result)
-        ranked = result["papers"]
-        if not ranked:
-            print("No papers found.")
-            if result["status"] == "failure":
-                sys.exit(1)
+        if args.json:
+            print(json.dumps({"papers": ranked}, indent=2))
             return
-        print(f"Found {len(ranked)} papers, sorted by relevance...\n")
+        for i, paper in enumerate(ranked[:10], start=1):
+            _print_paper(paper, i)
+        return
 
-    for index, paper in enumerate(ranked, start=1):
-        _print_paper(paper, index)
+    if args.no_cache:
+        set_cache_enabled(False)
 
-    print(f"\n{SEPARATOR}")
+    print(f"Searching for: {topic!r}\n", flush=True)
+    result = run_retrieval(
+        topic,
+        use_local_corpus=not args.no_local,
+        survey_mode=args.survey,
+    )
+    run_dir = save_run_artifacts(result)
+    print(f"Artifacts: {run_dir}\n", flush=True)
+
+    if args.json:
+        print(json.dumps(result, indent=2, ensure_ascii=False))
+        return
+
+    _print_metrics(result)
+    display = result.get("papers_display") or []
+    corpus = result.get("papers") or []
+
+    if not display and not corpus:
+        print("No papers found.")
+        if result["status"] == "failure":
+            sys.exit(1)
+        return
+
+    print(f"Preview: top {len(display)} of {len(corpus)} accepted papers:\n")
+    for i, paper in enumerate(display, start=1):
+        _print_paper(paper, i)
+    if len(corpus) > len(display):
+        print(
+            f"\n{SEPARATOR}\n"
+            f"Full corpus ({len(corpus)} papers) saved in run artifacts / use --json.\n"
+            f"{SEPARATOR}"
+        )
+    else:
+        print(f"\n{SEPARATOR}")
 
 
 if __name__ == "__main__":

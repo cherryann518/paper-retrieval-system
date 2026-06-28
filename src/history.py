@@ -1,7 +1,5 @@
 """
 Persist live search results to SQLite for the History tab.
-
-Not used in offline mode. No caching — every live search runs the agent fresh.
 """
 
 import json
@@ -19,9 +17,6 @@ CREATE TABLE IF NOT EXISTS search_sessions (
     query TEXT NOT NULL,
     created_at TEXT NOT NULL,
     status TEXT NOT NULL,
-    refinement_rounds INTEGER NOT NULL,
-    search_queries_used TEXT NOT NULL,
-    acceptance_reason TEXT NOT NULL,
     paper_count INTEGER NOT NULL,
     duration_ms REAL,
     result_json TEXT NOT NULL
@@ -38,7 +33,6 @@ def _connect() -> sqlite3.Connection:
 
 
 def _purge_old_entries(conn: sqlite3.Connection) -> int:
-    """Delete sessions older than HISTORY_RETENTION_DAYS. Returns rows deleted."""
     cutoff = (
         datetime.now(timezone.utc) - timedelta(days=HISTORY_RETENTION_DAYS)
     ).isoformat()
@@ -50,17 +44,12 @@ def _purge_old_entries(conn: sqlite3.Connection) -> int:
 
 
 def save_search(result: dict, duration_ms: float | None = None) -> int:
-    """Store one live search result. Returns the new session id."""
-    papers = result.get("papers") or []
+    papers = result.get("papers_display") or result.get("papers") or []
     payload = {
         "query": result["query"],
+        "search_query": result.get("search_query", result["query"]),
         "papers": papers,
         "status": result.get("status", "unknown"),
-        "mode": result.get("mode", "agent"),
-        "refinement_rounds": result.get("refinement_rounds", 0),
-        "search_queries_used": result.get("search_queries_used") or [result["query"]],
-        "acceptance_reason": result.get("acceptance_reason", ""),
-        "rounds": result.get("rounds") or [],
         "metrics": result.get("metrics") or {},
         "fetch_errors": result.get("fetch_errors") or [],
         "run_id": result.get("run_id"),
@@ -70,23 +59,20 @@ def save_search(result: dict, duration_ms: float | None = None) -> int:
     with _connect() as conn:
         deleted = _purge_old_entries(conn)
         if deleted:
-            print(f"[history] purged {deleted} entr{'y' if deleted == 1 else 'ies'} older than {HISTORY_RETENTION_DAYS} days", flush=True)
-
+            print(
+                f"[history] purged {deleted} entries older than {HISTORY_RETENTION_DAYS} days",
+                flush=True,
+            )
         cursor = conn.execute(
             """
             INSERT INTO search_sessions (
-                query, created_at, status, refinement_rounds,
-                search_queries_used, acceptance_reason,
-                paper_count, duration_ms, result_json
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                query, created_at, status, paper_count, duration_ms, result_json
+            ) VALUES (?, ?, ?, ?, ?, ?)
             """,
             (
                 payload["query"],
                 created_at,
                 payload["status"],
-                payload["refinement_rounds"],
-                json.dumps(payload["search_queries_used"]),
-                payload["acceptance_reason"],
                 len(papers),
                 duration_ms,
                 json.dumps(payload),
@@ -96,36 +82,28 @@ def save_search(result: dict, duration_ms: float | None = None) -> int:
 
 
 def list_history(limit: int = DEFAULT_LIST_LIMIT) -> list[dict]:
-    """Return recent sessions (newest first), without full paper payloads."""
     with _connect() as conn:
-        deleted = _purge_old_entries(conn)
-        if deleted:
-            print(f"[history] purged {deleted} entr{'y' if deleted == 1 else 'ies'} older than {HISTORY_RETENTION_DAYS} days", flush=True)
-
+        _purge_old_entries(conn)
         rows = conn.execute(
             """
-            SELECT id, query, created_at, status, refinement_rounds, paper_count
+            SELECT id, query, created_at, status, paper_count
             FROM search_sessions
             ORDER BY id DESC
             LIMIT ?
             """,
             (limit,),
         ).fetchall()
-
     return [dict(row) for row in rows]
 
 
 def get_search(session_id: int) -> dict | None:
-    """Return a saved search result by id, or None if missing."""
     with _connect() as conn:
         row = conn.execute(
             "SELECT id, created_at, result_json FROM search_sessions WHERE id = ?",
             (session_id,),
         ).fetchone()
-
     if row is None:
         return None
-
     result = json.loads(row["result_json"])
     result["id"] = row["id"]
     result["created_at"] = row["created_at"]
