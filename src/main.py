@@ -7,6 +7,7 @@ import json
 import sys
 
 from src.artifacts import save_run_artifacts
+from src.export import export_corpus_ndjson
 from src.pipeline import run_retrieval
 from src.rank import embed_and_rank
 from src.runtime import set_cache_enabled
@@ -94,6 +95,24 @@ def _print_metrics(result: dict) -> None:
                 f"lexical={row['lexical_v1']:.3f} delta={row['delta']:+.3f}",
                 flush=True,
             )
+
+    if m.get("fts_prefetch_enabled"):
+        print(
+            f"FTS prefetch: {m.get('papers_from_fts_prefetch', 0)} cross-query hits",
+            flush=True,
+        )
+    flagged = m.get("possible_duplicates_flagged", 0)
+    if flagged or m.get("possible_duplicates_total", 0):
+        print(
+            f"Possible duplicates: +{flagged} flagged this run "
+            f"({m.get('possible_duplicates_total', 0)} total in DB)",
+            flush=True,
+        )
+    if m.get("fetch_throttled"):
+        print(
+            f"Fetch throttled after rate limits (429 events={m.get('rate_limit_errors', 0)})",
+            flush=True,
+        )
     print(flush=True)
 
 
@@ -112,6 +131,12 @@ def main() -> None:
         "--json",
         action="store_true",
         help="Print full JSON result (includes full RAG corpus)",
+    )
+    parser.add_argument(
+        "--export",
+        choices=["ndjson"],
+        default=None,
+        help="Export accepted corpus to outputs/exports/{run_id}.ndjson",
     )
     args = parser.parse_args()
 
@@ -142,6 +167,11 @@ def main() -> None:
     )
     run_dir = save_run_artifacts(result)
     print(f"Artifacts: {run_dir}\n", flush=True)
+
+    if args.export == "ndjson":
+        export_path = run_dir / "corpus.ndjson"
+        export_corpus_ndjson(result, export_path)
+        print(f"Exported corpus → {export_path}\n", flush=True)
 
     if args.json:
         print(json.dumps(result, indent=2, ensure_ascii=False))

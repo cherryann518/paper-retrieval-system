@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from src.config import PAPERS_DB_PATH
+from src.fuzzy_dedupe import flag_fuzzy_duplicates, normalize_fuzzy_title
 from src.identifiers import identifiers_for_record
 from src.schema import PaperRecord
 
@@ -30,6 +31,7 @@ def _connect(db_path: Path | None = None) -> sqlite3.Connection:
 def _migrate_schema(conn: sqlite3.Connection) -> None:
     for ddl in (
         "ALTER TABLE papers ADD COLUMN openalex_id TEXT",
+        "ALTER TABLE papers ADD COLUMN title_normalized TEXT",
     ):
         try:
             conn.execute(ddl)
@@ -44,6 +46,7 @@ def init_db(db_path: Path | None = None) -> None:
             CREATE TABLE IF NOT EXISTS papers (
                 paper_id TEXT PRIMARY KEY,
                 title TEXT NOT NULL,
+                title_normalized TEXT,
                 authors_json TEXT NOT NULL DEFAULT '[]',
                 year INTEGER,
                 abstract TEXT,
@@ -101,13 +104,84 @@ def init_db(db_path: Path | None = None) -> None:
                 error_count INTEGER NOT NULL DEFAULT 0,
                 consecutive_zero_accept INTEGER NOT NULL DEFAULT 0
             );
+
+            CREATE TABLE IF NOT EXISTS possible_duplicates (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                paper_id_a TEXT NOT NULL,
+                paper_id_b TEXT NOT NULL,
+                match_type TEXT NOT NULL DEFAULT 'fuzzy_title_year',
+                score REAL NOT NULL DEFAULT 1.0,
+                seen_at TEXT NOT NULL,
+                UNIQUE(paper_id_a, paper_id_b, match_type)
+            );
+            CREATE INDEX IF NOT EXISTS idx_possible_duplicates_a
+                ON possible_duplicates(paper_id_a);
+            CREATE INDEX IF NOT EXISTS idx_possible_duplicates_b
+                ON possible_duplicates(paper_id_b);
             """
         )
         _migrate_schema(conn)
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_papers_openalex ON papers(openalex_id)"
         )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_papers_title_normalized ON papers(title_normalized)"
+        )
+        _ensure_fts(conn)
+        _backfill_title_normalized(conn)
         conn.commit()
+
+
+def _ensure_fts(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE VIRTUAL TABLE IF NOT EXISTS papers_fts USING fts5(
+            paper_id UNINDEXED,
+            title,
+            abstract,
+            tokenize='porter unicode61'
+        )
+        """
+    )
+    row = conn.execute("SELECT COUNT(*) AS n FROM papers_fts").fetchone()
+    if row and row["n"] == 0:
+        paper_count = conn.execute("SELECT COUNT(*) AS n FROM papers").fetchone()
+        if paper_count and paper_count["n"] > 0:
+            rebuild_fts_index(conn)
+
+
+def rebuild_fts_index(conn: sqlite3.Connection) -> None:
+    conn.execute("DELETE FROM papers_fts")
+    rows = conn.execute("SELECT paper_id, title, abstract FROM papers").fetchall()
+    for row in rows:
+        conn.execute(
+            "INSERT INTO papers_fts(paper_id, title, abstract) VALUES (?, ?, ?)",
+            (row["paper_id"], row["title"] or "", row["abstract"] or ""),
+        )
+
+
+def _backfill_title_normalized(conn: sqlite3.Connection) -> None:
+    rows = conn.execute(
+        "SELECT paper_id, title FROM papers WHERE title_normalized IS NULL OR title_normalized = ''"
+    ).fetchall()
+    for row in rows:
+        conn.execute(
+            "UPDATE papers SET title_normalized = ? WHERE paper_id = ?",
+            (normalize_fuzzy_title(row["title"]), row["paper_id"]),
+        )
+
+
+def _sync_fts(
+    conn: sqlite3.Connection,
+    paper_id: str,
+    title: str,
+    abstract: str | None,
+) -> None:
+    conn.execute("DELETE FROM papers_fts WHERE paper_id = ?", (paper_id,))
+    conn.execute(
+        "INSERT INTO papers_fts(paper_id, title, abstract) VALUES (?, ?, ?)",
+        (paper_id, title or "", abstract or ""),
+    )
 
 
 def _row_to_record(row: sqlite3.Row) -> PaperRecord:
@@ -194,16 +268,25 @@ def upsert_papers_batch(
     *,
     batch_size: int = 50,
     db_path: Path | None = None,
+    fuzzy_dedupe_enabled: bool = True,
 ) -> dict[str, int]:
     if not records:
-        return {"inserted": 0, "updated": 0, "source_hits": 0, "merged_by_identifier": 0}
+        return {
+            "inserted": 0,
+            "updated": 0,
+            "source_hits": 0,
+            "merged_by_identifier": 0,
+            "possible_duplicates_flagged": 0,
+        }
 
     init_db(db_path)
     inserted = 0
     updated = 0
     source_hits = 0
     merged_by_identifier = 0
+    possible_duplicates_flagged = 0
     now = _utc_now_iso()
+    fuzzy_enabled = fuzzy_dedupe_enabled
 
     with _connect(db_path) as conn:
         for start in range(0, len(records), batch_size):
@@ -236,19 +319,21 @@ def upsert_papers_batch(
                         "SELECT * FROM papers WHERE paper_id = ?",
                         (record.paper_id,),
                     ).fetchone()
+                    title_norm = normalize_fuzzy_title(record.title)
                     if row is None:
                         conn.execute(
                             """
                             INSERT INTO papers (
-                                paper_id, title, authors_json, year, abstract,
+                                paper_id, title, title_normalized, authors_json, year, abstract,
                                 doi, arxiv_id, openalex_id, s2_paper_id, pdf_url, venue,
                                 citation_count, sources_json, source_queries_json,
                                 first_seen_at, last_seen_at
-                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                             """,
                             (
                                 record.paper_id,
                                 record.title,
+                                title_norm,
                                 json.dumps(record.authors),
                                 record.year,
                                 record.abstract,
@@ -268,17 +353,19 @@ def upsert_papers_batch(
                         inserted += 1
                     else:
                         merged = _merge_record(_row_to_record(row), record)
+                        title_norm = normalize_fuzzy_title(merged.title)
                         conn.execute(
                             """
                             UPDATE papers SET
-                                title = ?, authors_json = ?, year = ?, abstract = ?,
-                                doi = ?, arxiv_id = ?, openalex_id = ?, s2_paper_id = ?,
-                                pdf_url = ?, venue = ?, citation_count = ?,
+                                title = ?, title_normalized = ?, authors_json = ?, year = ?,
+                                abstract = ?, doi = ?, arxiv_id = ?, openalex_id = ?,
+                                s2_paper_id = ?, pdf_url = ?, venue = ?, citation_count = ?,
                                 sources_json = ?, source_queries_json = ?, last_seen_at = ?
                             WHERE paper_id = ?
                             """,
                             (
                                 merged.title,
+                                title_norm,
                                 json.dumps(merged.authors),
                                 merged.year,
                                 merged.abstract,
@@ -296,8 +383,15 @@ def upsert_papers_batch(
                             ),
                         )
                         updated += 1
+                        record = merged
 
                     _upsert_identifiers(conn, record.paper_id, record)
+                    _sync_fts(conn, record.paper_id, record.title, record.abstract)
+
+                    if fuzzy_enabled:
+                        possible_duplicates_flagged += flag_fuzzy_duplicates(
+                            conn, record, now=now
+                        )
 
                     for source in record.sources:
                         for q in record.source_queries or [""]:
@@ -319,6 +413,7 @@ def upsert_papers_batch(
         "updated": updated,
         "source_hits": source_hits,
         "merged_by_identifier": merged_by_identifier,
+        "possible_duplicates_flagged": possible_duplicates_flagged,
     }
 
 
@@ -346,6 +441,46 @@ def load_local_corpus_for_query(
             (query.strip(),),
         ).fetchall()
     return [_row_to_record(row).to_paper_dict() for row in rows]
+
+
+def search_corpus_fts(
+    query: str,
+    *,
+    limit: int = 50,
+    db_path: Path | None = None,
+) -> list[dict[str, Any]]:
+    """G4 — cross-query corpus pre-fetch via FTS5 title+abstract search."""
+    import re
+
+    init_db(db_path)
+    tokens = re.findall(r"[a-z0-9]+", query.lower())
+    tokens = [t for t in tokens if len(t) > 2]
+    if not tokens:
+        return []
+
+    fts_query = " OR ".join(tokens)
+    with _connect(db_path) as conn:
+        try:
+            rows = conn.execute(
+                """
+                SELECT p.* FROM papers_fts f
+                JOIN papers p ON p.paper_id = f.paper_id
+                WHERE papers_fts MATCH ?
+                ORDER BY rank
+                LIMIT ?
+                """,
+                (fts_query, limit),
+            ).fetchall()
+        except sqlite3.OperationalError:
+            return []
+    return [_row_to_record(row).to_paper_dict() for row in rows]
+
+
+def count_possible_duplicates(*, db_path: Path | None = None) -> int:
+    init_db(db_path)
+    with _connect(db_path) as conn:
+        row = conn.execute("SELECT COUNT(*) AS n FROM possible_duplicates").fetchone()
+    return int(row["n"]) if row else 0
 
 
 def record_screening_batch(

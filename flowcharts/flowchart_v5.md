@@ -1,6 +1,6 @@
 # Pipeline flowchart v5 — 1st baseline (three providers + cache TTL)
 
-Deterministic retrieval: SS + arXiv + **OpenAlex**, sharded SQLite raw cache with **TTL**, full accepted corpus + display preview.
+Deterministic retrieval: SS + arXiv + **OpenAlex**, sharded SQLite raw cache with **TTL**, FTS cross-query prefetch (optional), fuzzy duplicate flags, full accepted corpus + display preview + NDJSON export.
 
 *(v4 is frozen; v5 supersedes it for current design.)*
 
@@ -8,7 +8,7 @@ Deterministic retrieval: SS + arXiv + **OpenAlex**, sharded SQLite raw cache wit
 
 ## One sentence
 
-User query → canonical queries → local corpus + fetch **3 providers** (raw-cached with TTL, year-chunked) → normalize & dedupe → upsert main DB → rank → screen → **full accepted corpus** + **display_limit** preview.
+User query → canonical queries → **same-query local corpus** + optional **FTS cross-query prefetch** → fetch **3 providers in parallel** (429-throttled) → normalize & dedupe → upsert main DB + **fuzzy duplicate flags** → rank (SBERT + lexical + D4 title/abstract SBERT) → screen (min score + optional D3 dual-gate) → **`ranked_pool` + accepted corpus + display preview** → optional **NDJSON export**.
 
 ---
 
@@ -19,76 +19,96 @@ flowchart TD
     Start["User query<br/>CLI · web · eval · survey mode"]
 
     subgraph config [Config]
-        Survey["survey_config.json<br/>sources, years, cache_ttl_days,<br/>min_score, display_limit"]
+        Survey["survey_config.json<br/>sources, years, cache_ttl_days,<br/>dual_gate_screening, fts_prefetch"]
         Env[".env<br/>S2 key · OpenAlex mailto"]
     end
 
     subgraph local [Local corpus]
         LocalDB[("papers.db")]
-        LocalPapers["Prior papers same query"]
+        SameQ["Prior papers same query<br/>source_hits"]
+        FTS["FTS5 prefetch<br/>papers_fts optional"]
     end
 
-    subgraph fetch [Live fetch — 3 providers]
+    subgraph loopctl [Loop control]
+        QState["query_state<br/>per sub-query + user query<br/>dead-query skip in survey"]
+    end
+
+    subgraph fetch [Live fetch — parallel, 429-throttled]
         SS["Semantic Scholar"]
         Arxiv["arXiv"]
-        OA["OpenAlex<br/>no API key"]
+        OA["OpenAlex"]
         Cache[("Raw cache<br/>3 SQLite shards / source<br/>TTL expiry")]
+        Throttle["FetchThrottle"]
     end
 
     subgraph integrate [Normalize & persist]
         Norm["PaperRecord"]
-        Dedupe["Dedupe by paper_id"]
+        IdMerge["Identifier merge E3"]
+        Fuzzy["possible_duplicates E4"]
         MainDB[("papers.db + screening_decisions")]
     end
 
     subgraph rankout [Rank & output]
-        Rank["rank_papers<br/>sbert · tfidf · recency"]
-        Screen["apply_screening"]
-        Corpus["papers — full accepted corpus"]
-        Display["papers_display — top display_limit"]
+        Rank["rank_papers<br/>sbert · lexical · D4 title/abstract"]
+        Pool["ranked_pool pre-screen"]
+        Screen["apply_screening<br/>min_score · D3 dual-gate"]
+        Corpus["papers accepted corpus"]
+        Display["papers_display preview"]
+        NDJSON["corpus.ndjson export"]
     end
 
     Start --> config
-    config --> LocalDB --> LocalPapers
-    config --> SS & Arxiv & OA
+    config --> QState
+    QState --> LocalDB
+    LocalDB --> SameQ
+    LocalDB --> FTS
+    config --> Throttle
+    Throttle --> SS & Arxiv & OA
     SS & Arxiv & OA <-->|"hit/miss/TTL"| Cache
-    SS & Arxiv & OA --> Norm --> Dedupe --> MainDB
-    LocalPapers --> Rank
-    Dedupe --> Rank
-    Rank --> Screen --> Corpus --> Display
+    SS & Arxiv & OA --> Norm --> IdMerge --> Fuzzy --> MainDB
+    SameQ --> Rank
+    FTS --> Rank
+    Rank --> Pool --> Screen
+    Screen --> Corpus --> Display
+    Corpus --> NDJSON
+    Screen --> QState
 ```
 
 ---
 
-## v5 changes from v4
+## v5 feature summary
 
-| Item | v4 | v5 |
-|------|----|----|
-| Providers | SS + arXiv | SS + arXiv + **OpenAlex** |
-| OpenAlex auth | — | **No API key**; optional `OPENALEX_MAILTO` |
-| Cache TTL | None | **`cache_ttl_days`** (default 7); lazy delete on read |
-| Output | top 10 | **Full accepted corpus** + `display_limit` preview |
-| Screening | — | **min_relevance_score** + persisted rejects |
-| Query planning | single string | **query_builder** (survey mode) |
-
----
-
-## Cache TTL
-
-- Config: `"cache_ttl_days": 7` in `survey_config.json` (`0` = never expire).
-- On cache **read**: if `created_at` older than TTL → treat as miss, delete row.
-- Optional maintenance: `purge_expired_cache()` from `src.cache`.
+| Item | Description |
+|------|-------------|
+| Providers | SS + arXiv + OpenAlex (parallel fetch) |
+| Cache | 3 SQLite shards/source + `cache_ttl_days` |
+| Output | `ranked_pool` + accepted corpus + display preview + NDJSON |
+| Scoring | SBERT primary + lexical secondary + D4 title/abstract SBERT |
+| D3 | Optional dual-gate (high SBERT + low lexical → reject) |
+| Dedupe E1–E4 | Identifier merge + fuzzy flag |
+| G1–G3 | Per-sub-query `query_state` + dead-query skip |
+| G4 | FTS5 cross-query prefetch (default off) |
+| G5 | `FetchThrottle` on 429 burst |
+| Eval | pool / accepted / display target metrics; per-query config |
 
 ---
 
-## OpenAlex notes
+## Config toggles (survey_config.json)
 
-- Endpoint: `GET https://api.openalex.org/works`
-- **No API key.** Free public API.
-- Optional `OPENALEX_MAILTO` in `.env` → polite pool (higher rate limits).
-- Pagination: cursor-based (`cursor=*`, then `next_cursor` from meta).
-- Year filter: `filter=publication_year:YYYY` when year-chunking enabled.
-- Abstract: reconstructed from `abstract_inverted_index`.
+```json
+{
+  "research_questions": ["..."],
+  "query_hints": ["..."],
+  "fts_prefetch_enabled": false,
+  "fuzzy_dedupe_enabled": true,
+  "dual_gate_screening": false,
+  "dual_gate_sbert_min": 0.35,
+  "dual_gate_lexical_max": 0.15,
+  "dual_gate_delta_min": 0.25,
+  "dead_query_threshold": 3,
+  "rate_limit_threshold": 2
+}
+```
 
 ---
 
@@ -97,19 +117,23 @@ flowchart TD
 | Command | Purpose |
 |---------|---------|
 | `python3 -m src.main "topic"` | CLI search |
+| `python3 -m src.main "topic" --export ndjson` | Search + NDJSON corpus |
+| `python3 -m src.main "topic" --survey` | Multi-query + dead-query skip |
 | `python3 -m src.app` | Web UI |
-| `python -m src.eval` | Benchmark |
-| `python3 -m src.main --survey` | Config-driven multi-query (if enabled) |
+| `python -m src.eval --official` | Reproducible benchmark → `OFFICIAL_BASELINE.json` |
+| `python -m src.eval --skip-screening` | Retrieval-only benchmark |
 
 ---
 
 ## Module map
 
 ```text
-src/pipeline.py       run_retrieval()
-src/fetch.py          fetch_all_sources() — 3 providers
-src/sources/openalex.py
-src/cache.py          sharded SQLite + TTL
-src/screening.py      accept/reject
-src/query_builder.py  canonical queries
+src/pipeline.py       run_retrieval() — ranked_pool + papers + rejects
+src/export.py         NDJSON corpus export
+src/eval.py           benchmark + official baseline
+src/fetch.py          fetch_all_sources() — parallel + throttle
+src/store.py          papers.db, FTS5, possible_duplicates
+src/screening.py      accept/reject + D3 dual-gate
+src/rank.py           SBERT + lexical + D4 field scores
+src/loop_control.py   query_state + dead-query filter
 ```

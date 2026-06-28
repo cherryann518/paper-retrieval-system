@@ -35,3 +35,33 @@ def test_apply_screening_rejects_low_score():
     assert len(accepted) == 1
     assert len(rejects) == 2
     assert rejects[0]["reason"] == "below_min_score"
+
+
+def test_dual_gate_rejects_high_sbert_low_lexical():
+    cfg = SurveyConfig(
+        min_relevance_score=0.2,
+        dual_gate_screening=True,
+        dual_gate_sbert_min=0.35,
+        dual_gate_lexical_max=0.15,
+        dual_gate_delta_min=0.25,
+    )
+    ranked = [
+        {
+            "title": "Semantic only",
+            "relevance_score": 0.55,
+            "lexical_score": 0.05,
+            "scores": {"lexical_v1": 0.05},
+            "year": 2020,
+        },
+        {
+            "title": "Both agree",
+            "relevance_score": 0.55,
+            "lexical_score": 0.45,
+            "scores": {"lexical_v1": 0.45},
+            "year": 2020,
+        },
+    ]
+    accepted, rejects = apply_screening(ranked, cfg)
+    assert len(accepted) == 1
+    assert accepted[0]["title"] == "Both agree"
+    assert rejects[0]["reason"] == "semantic_lexical_divergence"

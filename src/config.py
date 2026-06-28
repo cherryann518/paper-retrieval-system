@@ -26,6 +26,16 @@ MAX_PAGES_PER_QUERY = 10
 DISPLAY_LIMIT = 10  # CLI / web preview count
 ARXIV_MAX_RESULTS = 100
 DEAD_QUERY_THRESHOLD = 3  # consecutive zero-accept runs before skip in survey mode
+RATE_LIMIT_THRESHOLD = 2  # 429 errors in one fetch before throttling to serial
+DEFAULT_FTS_PREFETCH_LIMIT = 50
+
+# D3 dual-gate screening (SBERT high + lexical low → reject)
+DEFAULT_DUAL_GATE_SCREENING = False
+DUAL_GATE_SBERT_MIN = 0.35
+DUAL_GATE_LEXICAL_MAX = 0.15
+DUAL_GATE_DELTA_MIN = 0.25
+
+OFFICIAL_BASELINE_PATH = EVAL_DIR / "OFFICIAL_BASELINE.json"
 
 EMBEDDING_MODEL_NAME = "all-MiniLM-L6-v2"
 EMBEDDING_PACKAGE_PIN = "sentence-transformers==5.5.1"

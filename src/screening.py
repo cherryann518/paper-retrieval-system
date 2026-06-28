@@ -16,7 +16,9 @@ def apply_screening(
     """
     Filter ranked pool. Returns (accepted, rejects).
 
-    Reject reasons: missing_title, below_min_score, outside_timeline.
+    Reject reasons:
+      missing_title, below_min_score, outside_timeline,
+      semantic_lexical_divergence (D3 dual-gate, when enabled)
     """
     accepted: list[dict[str, Any]] = []
     rejects: list[dict[str, Any]] = []
@@ -37,6 +39,33 @@ def apply_screening(
                 )
             )
             continue
+
+        if config.dual_gate_screening:
+            lexical = float(
+                paper.get("lexical_score")
+                or (paper.get("scores") or {}).get("lexical_v1", 0.0)
+            )
+            delta = score - lexical
+            if (
+                score >= config.dual_gate_sbert_min
+                and lexical <= config.dual_gate_lexical_max
+                and delta >= config.dual_gate_delta_min
+            ):
+                rejects.append(
+                    _reject_record(
+                        paper,
+                        "semantic_lexical_divergence",
+                        {
+                            "sbert": score,
+                            "lexical": lexical,
+                            "delta": round(delta, 4),
+                            "sbert_min": config.dual_gate_sbert_min,
+                            "lexical_max": config.dual_gate_lexical_max,
+                            "delta_min": config.dual_gate_delta_min,
+                        },
+                    )
+                )
+                continue
 
         year = paper.get("year")
         if config.strict_timeline_filter and isinstance(year, int):
@@ -66,5 +95,6 @@ def _reject_record(paper: dict[str, Any], reason: str, evidence: dict[str, Any])
         "reason": reason,
         "evidence": evidence,
         "relevance_score": paper.get("relevance_score"),
+        "lexical_score": paper.get("lexical_score"),
         "year": paper.get("year"),
     }

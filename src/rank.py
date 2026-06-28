@@ -27,18 +27,42 @@ def _paper_text(paper: dict[str, Any]) -> str:
     return f"{paper.get('title') or ''} {paper.get('abstract') or ''}".strip()
 
 
-def rank_sbert(query: str, papers: list[dict[str, Any]]) -> dict[int, float]:
+def _rank_sbert_fields(
+    query: str,
+    papers: list[dict[str, Any]],
+    *,
+    field: str,
+) -> dict[int, float]:
+    """D4 — SBERT on title only, abstract only, or title+abstract."""
     if not papers:
         return {}
     from sentence_transformers.util import cos_sim
 
     model = _get_embedding_model()
     query_embedding = model.encode(query.strip(), convert_to_tensor=True)
-    paper_embeddings = model.encode(
-        [_paper_text(p) for p in papers], convert_to_tensor=True
-    )
+
+    if field == "title":
+        texts = [(p.get("title") or "").strip() for p in papers]
+    elif field == "abstract":
+        texts = [(p.get("abstract") or "").strip() for p in papers]
+    else:
+        texts = [_paper_text(p) for p in papers]
+
+    paper_embeddings = model.encode(texts, convert_to_tensor=True)
     scores = cos_sim(query_embedding, paper_embeddings)[0].tolist()
     return {id(p): float(s) for p, s in zip(papers, scores)}
+
+
+def rank_sbert(query: str, papers: list[dict[str, Any]]) -> dict[int, float]:
+    return _rank_sbert_fields(query, papers, field="combined")
+
+
+def rank_sbert_title(query: str, papers: list[dict[str, Any]]) -> dict[int, float]:
+    return _rank_sbert_fields(query, papers, field="title")
+
+
+def rank_sbert_abstract(query: str, papers: list[dict[str, Any]]) -> dict[int, float]:
+    return _rank_sbert_fields(query, papers, field="abstract")
 
 
 def rank_tfidf(query: str, papers: list[dict[str, Any]]) -> dict[int, float]:
@@ -78,6 +102,7 @@ def rank_papers(
     from_year: int = 2020,
     to_year: int = 2026,
     include_lexical: bool = True,
+    include_sbert_fields: bool = True,
 ) -> list[dict[str, Any]]:
     if not query or not query.strip():
         raise ValueError("query must be a non-empty string")
@@ -90,6 +115,9 @@ def rank_papers(
 
     if "sbert" in methods:
         method_scores["sbert_cosine"] = rank_sbert(query, papers)
+        if include_sbert_fields:
+            method_scores["sbert_title_cosine"] = rank_sbert_title(query, papers)
+            method_scores["sbert_abstract_cosine"] = rank_sbert_abstract(query, papers)
     if "tfidf" in methods:
         method_scores["tfidf_cosine"] = rank_tfidf(query, papers)
     if "recency" in methods:

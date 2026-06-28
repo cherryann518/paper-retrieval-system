@@ -15,13 +15,20 @@ from src.config import (
     DEAD_QUERY_THRESHOLD,
     DEFAULT_CACHE_TTL_DAYS,
     DEFAULT_CONFIG_PATH,
+    DEFAULT_DUAL_GATE_SCREENING,
+    DEFAULT_FTS_PREFETCH_LIMIT,
     DISPLAY_LIMIT,
+    DUAL_GATE_DELTA_MIN,
+    DUAL_GATE_LEXICAL_MAX,
+    DUAL_GATE_SBERT_MIN,
     MAX_PAGES_PER_QUERY,
     OPENALEX_MAX_PER_PAGE,
+    RATE_LIMIT_THRESHOLD,
     SEMANTIC_SCHOLAR_FETCH_LIMIT,
     SEMANTIC_SCHOLAR_MAX_OFFSET,
 )
 from src.normalize import merge_paper_records, normalize_arxiv, normalize_openalex, normalize_s2
+from src.rate_throttle import FetchThrottle, is_rate_limit_error
 from src.schema import PaperRecord
 from src.sources.arxiv import fetch_arxiv_soft
 from src.sources.openalex import fetch_openalex_soft
@@ -61,6 +68,14 @@ class SurveyConfig:
     max_queries: int = 12
     cache_ttl_days: float = DEFAULT_CACHE_TTL_DAYS
     dead_query_threshold: int = DEAD_QUERY_THRESHOLD
+    rate_limit_threshold: int = RATE_LIMIT_THRESHOLD
+    fts_prefetch_enabled: bool = False
+    fts_prefetch_limit: int = DEFAULT_FTS_PREFETCH_LIMIT
+    fuzzy_dedupe_enabled: bool = True
+    dual_gate_screening: bool = DEFAULT_DUAL_GATE_SCREENING
+    dual_gate_sbert_min: float = DUAL_GATE_SBERT_MIN
+    dual_gate_lexical_max: float = DUAL_GATE_LEXICAL_MAX
+    dual_gate_delta_min: float = DUAL_GATE_DELTA_MIN
     sources: list[str] = field(default_factory=lambda: ["semantic_scholar", "arxiv", "openalex"])
     rank_method: str = "sbert"
 
@@ -86,6 +101,14 @@ class SurveyConfig:
             max_queries=int(data.get("max_queries", 12)),
             cache_ttl_days=float(data.get("cache_ttl_days", DEFAULT_CACHE_TTL_DAYS)),
             dead_query_threshold=int(data.get("dead_query_threshold", DEAD_QUERY_THRESHOLD)),
+            rate_limit_threshold=int(data.get("rate_limit_threshold", RATE_LIMIT_THRESHOLD)),
+            fts_prefetch_enabled=bool(data.get("fts_prefetch_enabled", False)),
+            fts_prefetch_limit=int(data.get("fts_prefetch_limit", DEFAULT_FTS_PREFETCH_LIMIT)),
+            fuzzy_dedupe_enabled=bool(data.get("fuzzy_dedupe_enabled", True)),
+            dual_gate_screening=bool(data.get("dual_gate_screening", DEFAULT_DUAL_GATE_SCREENING)),
+            dual_gate_sbert_min=float(data.get("dual_gate_sbert_min", DUAL_GATE_SBERT_MIN)),
+            dual_gate_lexical_max=float(data.get("dual_gate_lexical_max", DUAL_GATE_LEXICAL_MAX)),
+            dual_gate_delta_min=float(data.get("dual_gate_delta_min", DUAL_GATE_DELTA_MIN)),
             sources=list(data.get("sources") or ["semantic_scholar", "arxiv", "openalex"]),
             rank_method=data.get("rank_method", "sbert"),
         )
@@ -127,6 +150,14 @@ class SurveyConfig:
             "max_queries": self.max_queries,
             "cache_ttl_days": self.cache_ttl_days,
             "dead_query_threshold": self.dead_query_threshold,
+            "rate_limit_threshold": self.rate_limit_threshold,
+            "fts_prefetch_enabled": self.fts_prefetch_enabled,
+            "fts_prefetch_limit": self.fts_prefetch_limit,
+            "fuzzy_dedupe_enabled": self.fuzzy_dedupe_enabled,
+            "dual_gate_screening": self.dual_gate_screening,
+            "dual_gate_sbert_min": self.dual_gate_sbert_min,
+            "dual_gate_lexical_max": self.dual_gate_lexical_max,
+            "dual_gate_delta_min": self.dual_gate_delta_min,
             "sources": list(self.sources),
             "rank_method": self.rank_method,
             "options": {
@@ -154,6 +185,7 @@ class SurveyConfig:
 class FetchStats:
     api_calls: int = 0
     cache_hits: int = 0
+    rate_limit_errors: int = 0
     api_calls_by_source: dict[str, int] = field(default_factory=dict)
     papers_fetched_by_source: dict[str, int] = field(default_factory=dict)
     fetch_errors: list[dict[str, Any]] = field(default_factory=list)
@@ -188,6 +220,8 @@ def _fetch_s2_page(
                 "error": error,
             }
         )
+        if is_rate_limit_error(error):
+            stats.rate_limit_errors += 1
     records: list[PaperRecord] = []
     s2_count = 0
     for raw in papers:
@@ -219,6 +253,8 @@ def _fetch_arxiv_page(
         stats.fetch_errors.append(
             {"source": "arxiv", "query": query, "offset": start, "error": error}
         )
+        if is_rate_limit_error(error):
+            stats.rate_limit_errors += 1
     records: list[PaperRecord] = []
     arxiv_count = 0
     for raw in papers:
@@ -273,6 +309,8 @@ def _fetch_openalex_pages(
                     "error": error,
                 }
             )
+            if is_rate_limit_error(error):
+                stats.rate_limit_errors += 1
             break
 
         for raw in papers:
@@ -295,6 +333,7 @@ def _fetch_openalex_pages(
 def _merge_fetch_stats(into: FetchStats, other: FetchStats) -> None:
     into.api_calls += other.api_calls
     into.cache_hits += other.cache_hits
+    into.rate_limit_errors += other.rate_limit_errors
     into.fetch_errors.extend(other.fetch_errors)
     for source, count in other.api_calls_by_source.items():
         into.api_calls_by_source[source] = into.api_calls_by_source.get(source, 0) + count
@@ -368,15 +407,18 @@ def fetch_all_sources(
     *,
     offset: int = 0,
     limit: int | None = None,
+    throttle: FetchThrottle | None = None,
 ) -> tuple[list[PaperRecord], FetchStats]:
     """Fetch from configured sources in parallel with year-chunking and pagination."""
     cfg = config or SurveyConfig.load()
     per_page = limit or SEMANTIC_SCHOLAR_FETCH_LIMIT
     merged_stats = FetchStats()
     all_records: list[PaperRecord] = []
+    fetch_throttle = throttle or FetchThrottle()
+    max_workers = fetch_throttle.effective_workers(len(cfg.sources))
     futures = []
 
-    with ThreadPoolExecutor(max_workers=max(len(cfg.sources), 1)) as pool:
+    with ThreadPoolExecutor(max_workers=max(max_workers, 1)) as pool:
         if "semantic_scholar" in cfg.sources:
             futures.append(
                 pool.submit(
@@ -398,6 +440,11 @@ def fetch_all_sources(
             records, stats = future.result()
             all_records.extend(records)
             _merge_fetch_stats(merged_stats, stats)
+
+    fetch_throttle.observe_errors(
+        merged_stats.fetch_errors,
+        threshold=cfg.rate_limit_threshold,
+    )
 
     return merge_paper_records(all_records), merged_stats
 

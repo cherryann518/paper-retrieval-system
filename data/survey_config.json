@@ -1,7 +1,16 @@
 {
   "topic_overview": "retrieval augmented generation",
-  "research_questions": [],
-  "query_hints": [],
+  "research_questions": [
+    "retrieval augmented generation language models",
+    "dense passage retrieval open domain question answering",
+    "how do vector databases improve RAG recall",
+    "chunking strategies for long document retrieval"
+  ],
+  "query_hints": [
+    "RAG survey neural information retrieval",
+    "embedding models passage retrieval benchmark",
+    "in-context learning retrieval augmented"
+  ],
   "timeline_from_year": 2015,
   "timeline_to_year": 2026,
   "fields_of_study": [],
@@ -13,6 +22,14 @@
   "max_queries": 12,
   "cache_ttl_days": 7,
   "dead_query_threshold": 3,
+  "rate_limit_threshold": 2,
+  "fts_prefetch_enabled": false,
+  "fts_prefetch_limit": 50,
+  "fuzzy_dedupe_enabled": true,
+  "dual_gate_screening": false,
+  "dual_gate_sbert_min": 0.35,
+  "dual_gate_lexical_max": 0.15,
+  "dual_gate_delta_min": 0.25,
   "sources": ["semantic_scholar", "arxiv", "openalex"],
   "rank_method": "sbert"
 }

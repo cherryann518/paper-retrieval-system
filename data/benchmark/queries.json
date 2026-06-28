@@ -2,6 +2,7 @@
   {
     "query": "CRISPR",
     "category": "short_acronym",
+    "config": { "fields_of_study": ["Biology"] },
     "note": "Biology acronym — single token.",
     "targets": [
       {
@@ -17,6 +18,7 @@
   {
     "query": "coral bleaching",
     "category": "short",
+    "config": { "fields_of_study": ["Environmental Science", "Biology"] },
     "targets": [
       {
         "title": "Global warming and recurrent mass bleaching of corals",
@@ -166,6 +168,7 @@
   {
     "query": "retrieval augmented generation language models",
     "category": "cs_rag",
+    "config": { "fields_of_study": ["Computer Science"] },
     "targets": [
       {
         "title": "Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks",
